@@ -23,17 +23,67 @@ BOLD_WHITE='\e[1;37m'       # white
 # Default
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
-echo -ne '\033c'
-echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+"
-echo -e ${YELLOW}   "    |                                                                  |"
-echo -e "     |${RED}    ███████╗████████╗    ${GREEN}█████╗ ██╗   ██╗████████╗ ██████╗ ${PURPLE}██╗   ${YELLOW} |"
-echo -e "     |${RED}    ██╔════╝╚══██╔══╝   ${GREEN}██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗${PURPLE}██║   ${YELLOW} |"
-echo -e "     |${BOLD_RED}    █████╗     ██║${WHITE}█████╗${BOLD_GREEN}███████║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}██║   ${YELLOW} |"
-echo -e "     |${BOLD_RED}    ██╔══╝     ██║${WHITE}╚════╝${BOLD_GREEN}██╔══██║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}╚═╝   ${YELLOW} |"
-echo -e "     |${BOLD_RED}    ███████╗   ██║      ${GREEN}██║  ██║╚██████╔╝   ██║   ╚██████╔╝${PURPLE}██╗   ${YELLOW} |"
-echo -e "     |${BOLD_RED}    ╚══════╝   ╚═╝      ${GREEN}╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ${PURPLE}╚═╝   ${YELLOW} |"
-echo -e ${YELLOW}   "    |                                                                  |"
-echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+${YELLOW}"
-echo -e "                        |${BOLD_RED} Evil${BOLD_YELLOW} Twin${BOLD_PURPLE} Automated${BOLD_GREEN} Attack${YELLOW} |"
-echo -e "                        ${CYAN}+${YELLOW}----------------------------${CYAN}+"
+main() {
+    result='main'
+    while [ "${result}" == 'main' ];
+    do
+        result=none
 
+        echo -ne '\033c'
+        echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+"
+        echo -e ${YELLOW}   "    |                                                                  |"
+        echo -e "     |${RED}    ███████╗████████╗    ${GREEN}█████╗ ██╗   ██╗████████╗ ██████╗ ${PURPLE}██╗   ${YELLOW} |"
+        echo -e "     |${RED}    ██╔════╝╚══██╔══╝   ${GREEN}██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗${PURPLE}██║   ${YELLOW} |"
+        echo -e "     |${BOLD_RED}    █████╗     ██║${WHITE}█████╗${BOLD_GREEN}███████║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}██║   ${YELLOW} |"
+        echo -e "     |${BOLD_RED}    ██╔══╝     ██║${WHITE}╚════╝${BOLD_GREEN}██╔══██║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}╚═╝   ${YELLOW} |"
+        echo -e "     |${BOLD_RED}    ███████╗   ██║      ${GREEN}██║  ██║╚██████╔╝   ██║   ╚██████╔╝${PURPLE}██╗   ${YELLOW} |"
+        echo -e "     |${BOLD_RED}    ╚══════╝   ╚═╝      ${GREEN}╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ${PURPLE}╚═╝   ${YELLOW} |"
+        echo -e ${YELLOW}   "    |                                                                  |"
+        echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+${YELLOW}"
+        echo -e "                        |${BOLD_RED} Evil${BOLD_YELLOW} Twin${BOLD_PURPLE} Automated${BOLD_GREEN} Attack${YELLOW} |"
+        echo -e "                        ${CYAN}+${YELLOW}----------------------------${CYAN}+"
+
+        user_name=`whoami`
+        if [ "${user_name}" != "root" ]; then
+            echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
+            echo -e "${WHITE}     | [${RED}!${WHITE}] You need to launch the script as the root user, run it with  ${WHITE}|"
+            echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
+            echo -e "${WHITE}     | ${RED}                    \$${WHITE}=> sudo ${YELLOW}./${GREEN}et${WHITE}-${GREEN}auto${WHITE}.${GREEN}sh${WHITE}                        |"
+            echo -e "${WHITE}     | ${RED}                    \$${WHITE}=> sudo ${BLUE}bash ${GREEN}et${WHITE}-${GREEN}auto${WHITE}.${GREEN}sh${WHITE}                     |"
+            echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
+            echo ""
+            echo ""
+        else
+            echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
+            echo -e "${WHITE}     | ${YELLOW} ID ${WHITE} |                            ${BOLD_PURPLE}Name${WHITE}                           |"
+            echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
+            echo -e "${WHITE}     | ${RED}[${YELLOW}01${RED}]${WHITE} |${GREEN} Start the attack${WHITE}.                                         |"
+            echo -e "${WHITE}     | ${RED}[${YELLOW}02${RED}]${WHITE} |${GREEN} Exit${WHITE}.                                                     |"
+            echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
+            echo ""
+            echo -e -n "${WHITE}    ${RED} [${CYAN}!${RED}]${WHITE} Type the${BOLD_RED} ID${WHITE} of your choice: "
+
+            read menu_selection
+            menu_selection=`expr ${menu_selection} + 0 2> /dev/null`
+
+            case "${menu_selection}" in
+                "1")
+                    ;;
+                "2")
+                    echo ""
+                    echo -e "${WHITE}     [${GREEN} ok ${WHITE}]${WHITE} See ${BOLD_YELLOW}you${WHITE} next time!"
+                    echo ""
+			        exit
+			        ;;
+			    *)
+			        echo ""
+			        echo -e "${WHITE}     [${RED}!${WHITE}]${RED} Input${WHITE} is out of range."
+			        echo ""
+			        sleep 2.0
+			        result='main'
+			        ;;
+			esac
+        fi
+    done
+}
+main "$@"
