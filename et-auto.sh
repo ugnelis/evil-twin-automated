@@ -24,6 +24,91 @@ BOLD_WHITE='\e[1;37m'       # white
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
 ###########################################
+# Get information of the chipset.
+# Globals:
+#   chipset
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+
+get_chipset() {
+    local bus
+    local bus_info
+    local device_id
+    local driver
+
+    if [ -f /sys/class/net/${interface}/device/modalias ]; then
+        bus="$(cut -d ":" -f 1 /sys/class/net/${interface}/device/modalias)"
+        if [ "${bus}" = "usb" ]; then
+            bus_info="$(cut -d ":" -f 2 /sys/class/net/${interface}/device/modalias | cut -b 1-10 | sed 's/^.//;s/p/:/')"
+            chipset="$(lsusb -d "${bus_info}" | head -n1 - | cut -f3- -d ":" | sed 's/^....//;s/ Network Connection//g;s/ Wireless Adapter//g;s/^ //')"
+
+        # Broadcom appears to define all the internal buses so we have to detect them here.
+        elif [ "${bus}" = "pci" -o "${bus}" = "pcmcia" ]; then
+            if [ -f /sys/class/net/$iface/device/vendor ] && [ -f /sys/class/net/$iface/device/device ]; then
+                device_id="$(cat /sys/class/net/${interface}/device/vendor):$(cat /sys/class/net/${interface}/device/device)"
+                chipset="$(lspci -d ${device_id} | cut -f3- -d ":" | sed 's/Wireless LAN Controller //g;s/ Network Connection//g;s/ Wireless Adapter//;s/^ //')"
+            else
+                bus_info="$(printf "${ethtool_output}" | grep bus-info | cut -d ":" -f "3-" | sed 's/^ //')"
+                chipset="$(lspci | grep "${bus_info}" | head -n1 - | cut -f3- -d ":" | sed 's/Wireless LAN Controller //g;s/ Network Connection//g;s/ Wireless Adapter//;s/^ //')"
+                device_id="$(lspci -nn | grep "${bus_info}" | grep '[[0-9][0-9][0-9][0-9]:[0-9][0-9][0-9][0-9]' -o)"
+            fi
+        elif [ "${bus}" = "sdio" ]; then
+            if [ -f /sys/class/net/$iface/device/vendor ] && [ -f /sys/class/net/$iface/device/device ]; then
+                device_id="$(cat /sys/class/net/${interface}/device/vendor):$(cat /sys/class/net/${interface}/device/device)"
+            fi
+            if [ "${device_id}" = '0x02d0:0x4330' ]; then
+                chipset='Broadcom 4330'
+            elif [ "${device_id}" = '0x02d0:0x4329' ]; then
+                chipset='Broadcom 4329'
+            elif [ "${device_id}" = '0x02d0:0x4334' ]; then
+                chipset='Broadcom 4334'
+            elif [ "${device_id}" = '0x02d0:0xa94c' ]; then
+                chipset='Broadcom 43340'
+            elif [ "${device_id}" = '0x02d0:0xa94d' ]; then
+                chipset='Broadcom 43341'
+            elif [ "${device_id}" = '0x02d0:0x4324' ]; then
+                chipset='Broadcom 43241'
+            elif [ "${device_id}" = '0x02d0:0x4335' ]; then
+                chipset='Broadcom 4335/4339'
+            elif [ "${device_id}" = '0x02d0:0xa962' ]; then
+                chipset='Broadcom 43362'
+            elif [ "${device_id}" = '0x02d0:0xa9a6' ]; then
+                chipset='Broadcom 43430'
+            elif [ "${device_id}" = '0x02d0:0x4345' ]; then
+                chipset='Broadcom 43455'
+            elif [ "${device_id}" = '0x02d0:0x4354' ]; then
+                chipset='Broadcom 4354'
+            elif [ "${device_id}" = '0x02d0:0xa887' ]; then
+                chipset='Broadcom 43143'
+            else
+                chipset="unable to detect for sdio ${device_id}"
+            fi
+        else
+            chipset="Not pci, usb, or sdio."
+        fi
+    elif [ -f /sys/class/net/$iface/device/idVendor ] && [ -f /sys/class/net/$iface/device/idProduct ]; then
+        device_id="$(cat /sys/class/net/${interface}/device/idVendor):$(cat /sys/class/net/${interface}/device/idProduct)"
+        chipset="$(lsusb | grep -i "${device_id}" | head -n1 - | cut -f3- -d ":" | sed 's/^....//;s/ Network Connection//g;s/ Wireless Adapter//g;s/^ //')"
+    elif [ "${driver}" = "mac80211_hwsim" ]; then
+        chipset="Software simulator of 802.11 radio(s) for mac80211"
+    elif $(printf "${ethtool_output}" | awk '/bus-info/ {print $2}' | grep -q bcma)
+    then
+        bus="bcma"
+
+        if [ "${driver}" = "brcmsmac" ] || [ "${driver}" = "brcmfmac" ] || [ "${driver}" = "b43" ]; then
+            chipset="Broadcom on bcma bus, information limited"
+        else
+            chipset="Unrecognized driver \"${driver}\" on bcma bus"
+        fi
+    else
+        chipset="non-mac80211 device? (report this!)"
+    fi
+}
+
+###########################################
 # Get WI-FI interfaces.
 # Globals:
 #   interface_list
@@ -76,6 +161,79 @@ check_programs() {
     fi
 }
 
+###########################################
+# Get chipsets of the interfaces.
+# Globals:
+#   chipsets_number
+#   interfaces
+#   chipsets
+#   ethtool_output
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+get_interfaces_chipsets() {
+    get_interfaces_list
+    chipsets_number=0
+    for interface in $(printf "${interface_list}"); do
+        unset ethtool_output FROM FIRMWARE STACK MADWIFI MAC80211 BUSADDR chipset EXTENDED PHYDEV ifacet DRIVERt FIELD1 FIELD1t FIELD2 FIELD2t CHIPSETt
+
+        ethtool_output="$(ethtool -i "${interface}" 2>&1)"
+        if [ "${ethtool_output}" != "Cannot get driver information: Operation not supported" ]; then
+            get_chipset ${interface}
+            interfaces["${chipsets_number}"]="${interface}"
+            chipsets["${chipsets_number}"]="${chipset}"
+        else
+            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} ${BOLD_PURPLE}ethtool${GREEN} failed${WHITE}..."
+            echo ""
+            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Only mac80211 devices on kernel 2.6.33 or higher are officially supported by airmon-ng${WHITE}."
+            echo ""
+            exit 1
+        fi
+        chipsets_number=$((chipsets_number+1))
+    done
+}
+
+###########################################
+# Get chipsets of the interfaces.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+select_interface() {
+    local interfaces_number=`iwconfig 2>&1 | grep 'ESSID' | wc -l`
+    local interfaces_monitor_mode=`iwconfig 2>&1 | grep 'Mode:Monitor'`
+
+    echo ""
+    echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for wireless devices${WHITE}..."
+
+    if [ "${interfaces_number}" -ge 1 ] && [ "${interfaces_monitor_mode}" = "" ]; then
+        get_interfaces_chipsets
+        sleep 0.5
+        echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} wireless device(s)${WHITE}."
+        echo ""
+        for (( c=0; c<${chipsets_number}; c++)); do
+            echo "$((c+1)) ${interfaces[${c}]} ${chipsets[${c}]}"
+        done
+    elif [ "${interfaces_number}" -le 0 ]; then
+        echo ""
+        sleep 0.5
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Is no wireless device to put into ${PURPLE}monitor mode${WHITE}."
+        echo ""
+        sleep 0.5
+    elif [ "${interfaces_number}" -le 0 ] && [ "${interfaces_monitor_mode}" = "" ]; then
+        echo ""
+        sleep 0.5
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
+        sleep 0.5
+    fi
+}
+
+
 main() {
     local result='main'
     while [ "${result}" == 'main' ];
@@ -124,6 +282,7 @@ main() {
 
             case "${menu_selection}" in
                 "1")
+                    select_interface
                     ;;
                 "2")
                     echo ""
