@@ -23,8 +23,61 @@ BOLD_WHITE='\e[1;37m'       # white
 # Default
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
+###########################################
+# Get WI-FI interfaces.
+# Globals:
+#   interface_list
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+get_interfaces_list() {
+	unset interface_list
+	for interface in $(ls -1 /sys/class/net); do
+		if [ -f /sys/class/net/${interface}/uevent ]; then
+			if $(grep -q DEVTYPE=wlan /sys/class/net/${interface}/uevent)
+			then
+				interface_list="${interface_list}\n ${interface}"
+			fi
+		fi
+	done
+	if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
+		for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
+			interface_list="${interface_list}\n ${interface}"
+		done
+		interface_list="$(printf "${interface_list}" | sort -bu)"
+	fi
+}
+
+###########################################
+# Check if needed programs are installed.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+check_programs() {
+    if [ -d /sys/bus/pci ] || [ -d /sys/bus/pci_express ] || [ -d /proc/bus/pci ]; then
+        if [ ! -x "$(command -v lspci 2>&1)" ]; then
+            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lspci{GREEN} from your distro's package manager${WHITE}."
+            echo ""
+            exit 1
+        fi
+    fi
+    if [ -d /sys/bus/usb ]; then
+        if [ ! -x "$(command -v lsusb 2>&1)" ]; then
+            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lsusb${GREEN} from your distro's package manager${WHITE}."
+            echo ""
+            exit 1
+        fi
+    fi
+}
+
 main() {
-    result='main'
+    local result='main'
     while [ "${result}" == 'main' ];
     do
         result=none
@@ -43,7 +96,7 @@ main() {
         echo -e "                        |${BOLD_RED} Evil${BOLD_YELLOW} Twin${BOLD_PURPLE} Automated${BOLD_GREEN} Attack${YELLOW} |"
         echo -e "                        ${CYAN}+${YELLOW}----------------------------${CYAN}+"
 
-        user_name=`whoami`
+        local user_name=`whoami`
         if [ "${user_name}" != "root" ]; then
             echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
             echo -e "${WHITE}     | [${RED}!${WHITE}] You need to launch the script as the root user, run it with  ${WHITE}|"
@@ -54,6 +107,8 @@ main() {
             echo ""
             echo ""
         else
+            check_programs
+
             echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
             echo -e "${WHITE}     | ${YELLOW} ID ${WHITE} |                            ${BOLD_PURPLE}Name${WHITE}                           |"
             echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
@@ -63,6 +118,7 @@ main() {
             echo ""
             echo -e -n "${WHITE}    ${RED} [${CYAN}!${RED}]${WHITE} Type the${BOLD_RED} ID${WHITE} of your choice: "
 
+            local menu_selection
             read menu_selection
             menu_selection=`expr ${menu_selection} + 0 2> /dev/null`
 
