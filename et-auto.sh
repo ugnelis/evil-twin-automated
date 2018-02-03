@@ -208,6 +208,7 @@ select_interface() {
     local interfaces_number=`iwconfig 2>&1 | grep 'ESSID' | wc -l`
     local interfaces_monitor_mode=`iwconfig 2>&1 | grep 'Mode:Monitor'`
 
+    echo -ne '\033c'
     echo ""
     echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for wireless devices${WHITE}..."
 
@@ -218,7 +219,7 @@ select_interface() {
 
         # Formatting table.
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
-        echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipset                                                 ${YELLOW}|"
+        echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipsets                                                ${YELLOW}|"
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
 
         for (( c=0; c<${chipsets_number}; c++)); do
@@ -235,8 +236,13 @@ select_interface() {
         echo ""
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
     fi
-}
 
+    echo ""
+    echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${interfaces_number}${WHITE}]:${GREEN}"
+
+    local interface_selection
+    read interface_selection
+}
 
 main() {
     local result='main'
