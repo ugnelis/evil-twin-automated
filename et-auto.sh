@@ -213,23 +213,27 @@ select_interface() {
 
     if [ "${interfaces_number}" -ge 1 ] && [ "${interfaces_monitor_mode}" = "" ]; then
         get_interfaces_chipsets
-        sleep 0.5
         echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} wireless device(s)${WHITE}."
         echo ""
+
+        # Formatting table.
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+        echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipset                                                 ${YELLOW}|"
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+
         for (( c=0; c<${chipsets_number}; c++)); do
-            echo "$((c+1)) ${interfaces[${c}]} ${chipsets[${c}]}"
+            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]}"
         done
+
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+
     elif [ "${interfaces_number}" -le 0 ]; then
         echo ""
-        sleep 0.5
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Is no wireless device to put into ${PURPLE}monitor mode${WHITE}."
         echo ""
-        sleep 0.5
     elif [ "${interfaces_number}" -le 0 ] && [ "${interfaces_monitor_mode}" = "" ]; then
         echo ""
-        sleep 0.5
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
-        sleep 0.5
     fi
 }
 
