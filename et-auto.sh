@@ -228,6 +228,25 @@ select_interface() {
 
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
 
+
+        echo ""
+
+        # Interface selection part.
+        local interface_selection
+        is_interface_selected=false
+        while [[ "${is_interface_selected}" != "true" ]]; do
+            echo -en "\033[1A\033[2K"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${interfaces_number}${WHITE}]: ${GREEN}"
+
+            read interface_selection
+            if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
+                if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
+                    is_interface_selected=true
+                    wlan=${interfaces[$((interface_selection-1))]}
+                    echo ${wlan}
+                fi
+            fi
+        done
     elif [ "${interfaces_number}" -le 0 ]; then
         echo ""
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Is no wireless device to put into ${PURPLE}monitor mode${WHITE}."
@@ -236,12 +255,6 @@ select_interface() {
         echo ""
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
     fi
-
-    echo ""
-    echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${interfaces_number}${WHITE}]:${GREEN}"
-
-    local interface_selection
-    read interface_selection
 }
 
 main() {
