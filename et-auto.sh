@@ -28,11 +28,10 @@ DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 # Globals:
 #   chipset
 # Arguments:
-#   None
+#   interface
 # Returns:
 #   None
 ###########################################
-
 get_chipset() {
     local bus
     local bus_info
@@ -196,9 +195,33 @@ get_interfaces_chipsets() {
 }
 
 ###########################################
-# Get chipsets of the interfaces.
+# Show wifi hot spots list.
 # Globals:
 #   None
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+show_wifi_list() {
+    local capture_dir="."
+
+    check_dir=`ls ${capture_dir} | grep -E '^capture$'`
+    if [ "${check_dir}" != "" ];then
+        rm -rf ${capture_dir}/capture
+        mkdir ${capture_dir}/capture
+    else
+        mkdir ${capture_dir}/capture
+    fi
+    airodump-ng -w ${capture_dir}/capture/capture --output-format csv -a ${wlan}
+
+    # TODO(ugnelis): put save csv into table.
+}
+
+###########################################
+# Get chipsets of the interfaces.
+# Globals:
+#   wlan
 # Arguments:
 #   None
 # Returns:
@@ -234,6 +257,8 @@ select_interface() {
         # Interface selection part.
         local interface_selection
         is_interface_selected=false
+
+
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
             echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${interfaces_number}${WHITE}]: ${GREEN}"
@@ -243,10 +268,18 @@ select_interface() {
                 if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
                     is_interface_selected=true
                     wlan=${interfaces[$((interface_selection-1))]}
-                    echo ${wlan}
+
                 fi
             fi
         done
+
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Enabling monitor mode on ${BOLD_PURPLE}$wlan${WHITE}."
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
+        ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
+
+        show_wifi_list
+
+
     elif [ "${interfaces_number}" -le 0 ]; then
         echo ""
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Is no wireless device to put into ${PURPLE}monitor mode${WHITE}."
@@ -270,8 +303,8 @@ main() {
         echo -e "     |${RED}    ██╔════╝╚══██╔══╝   ${GREEN}██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗${PURPLE}██║   ${YELLOW} |"
         echo -e "     |${BOLD_RED}    █████╗     ██║${WHITE}█████╗${BOLD_GREEN}███████║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}██║   ${YELLOW} |"
         echo -e "     |${BOLD_RED}    ██╔══╝     ██║${WHITE}╚════╝${BOLD_GREEN}██╔══██║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}╚═╝   ${YELLOW} |"
-        echo -e "     |${BOLD_RED}    ███████╗   ██║      ${GREEN}██║  ██║╚██████╔╝   ██║   ╚██████╔╝${PURPLE}██╗   ${YELLOW} |"
-        echo -e "     |${BOLD_RED}    ╚══════╝   ╚═╝      ${GREEN}╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ${PURPLE}╚═╝   ${YELLOW} |"
+        echo -e "     |${RED}    ███████╗   ██║      ${GREEN}██║  ██║╚██████╔╝   ██║   ╚██████╔╝${PURPLE}██╗   ${YELLOW} |"
+        echo -e "     |${RED}    ╚══════╝   ╚═╝      ${GREEN}╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ${PURPLE}╚═╝   ${YELLOW} |"
         echo -e ${YELLOW}   "    |                                                                  |"
         echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+${YELLOW}"
         echo -e "                        |${BOLD_RED} Evil${BOLD_YELLOW} Twin${BOLD_PURPLE} Automated${BOLD_GREEN} Attack${YELLOW} |"
@@ -313,14 +346,14 @@ main() {
                     echo ""
 			        exit
 			        ;;
-			    *)
-			        echo ""
-			        echo -e "${WHITE}     [${RED}!${WHITE}]${RED} Input${WHITE} is out of range."
-			        echo ""
-			        sleep 2.0
-			        result='main'
-			        ;;
-			esac
+                *)
+                    echo ""
+                    echo -e "${WHITE}     [${RED}!${WHITE}]${BOLD_RED} Input${WHITE} is out of range."
+                    echo ""
+                    sleep 2.0
+                    result='main'
+                    ;;
+            esac
         fi
     done
 }
