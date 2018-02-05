@@ -144,6 +144,7 @@ get_interfaces_list() {
 #   None
 ###########################################
 check_programs() {
+    # Check if lspci is installed.
     if [ -d /sys/bus/pci ] || [ -d /sys/bus/pci_express ] || [ -d /proc/bus/pci ]; then
         if [ ! -x "$(command -v lspci 2>&1)" ]; then
             echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lspci{GREEN} from your distro's package manager${WHITE}."
@@ -151,12 +152,21 @@ check_programs() {
             exit 1
         fi
     fi
+
+    # Check if lsusb is installed.
     if [ -d /sys/bus/usb ]; then
         if [ ! -x "$(command -v lsusb 2>&1)" ]; then
             echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lsusb${GREEN} from your distro's package manager${WHITE}."
             echo ""
             exit 1
         fi
+    fi
+
+    # Check if aircrack-ng is installed.
+    if ! [ -x "$(command -v aircrack-ng)" ]; then
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}aircrack-ng${GREEN} from your distro's package manager${WHITE}."
+        echo ""
+        exit 1
     fi
 }
 
