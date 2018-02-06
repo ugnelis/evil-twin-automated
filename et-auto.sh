@@ -205,15 +205,19 @@ get_interfaces_chipsets() {
 }
 
 ###########################################
-# Show wifi hot spots list.
+# Get wifi hot spots list.
 # Globals:
-#   None
+#  macs
+#  channels
+#  encryptions
+#  essids
+#  items_size
 # Arguments:
 #   None
 # Returns:
 #   None
 ###########################################
-show_wifi_list() {
+get_wifi_list() {
     local capture_dir="."
 
     check_dir=`ls ${capture_dir} | grep -E '^capture$'`
@@ -223,9 +227,67 @@ show_wifi_list() {
     else
         mkdir ${capture_dir}/capture
     fi
-    airodump-ng -w ${capture_dir}/capture/capture --output-format csv -a ${wlan}
+    trap - SIGINT SIGQUIT SIGTSTP
 
-    # TODO(ugnelis): put save csv into table.
+    airodump-ng -w ${capture_dir}/capture/capture --output-format csv -a ${wlan}
+    take_needed=`cat ${capture_dir}/capture/capture-01.csv | egrep -a -n '(Station|CLIENT)' | awk -F : '{print $1}'`
+    take_needed=`expr ${take_needed} + 1`
+    head -n ${take_needed} ${capture_dir}/capture/capture-01.csv &> ${capture_dir}/capture/capture-02.csv
+
+    local mac
+    local fts
+    local lts
+    local channel
+    local speed
+    local encryption
+    local cypher
+    local auth
+    local power
+    local beacon
+    local iv
+    local lan_ip
+    local id_length
+    local essid
+    local key
+
+    # TODO(Ugnelis): remove bad entries.
+
+    items_size=0
+    while IFS=, read mac fts lts channel speed encryption cypher auth power beacon iv lan_ip id_length essid key; do
+        mac_lenght=${#mac}
+        if [ "${mac_lenght}" -ge 17 ]; then
+            macs["${items_size}"]=${mac}
+            channels["${items_size}"]=${channel}
+            encryptions["${items_size}"]=${encryption}
+            essids["${items_size}"]=${essid}
+            echo ${essid}
+            items_size=$((items_size+1))
+        fi
+    done  < ${capture_dir}/capture/capture-02.csv
+}
+
+###########################################
+# Show wifi hot spots list.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+show_wifi_list() {
+    get_wifi_list
+
+    echo -ne '\033c'
+    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}-------${WHITE}+"
+    echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC   ${YELLOW}|"
+    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}-------${WHITE}+"
+
+    for (( c=0; c<${items_size}; c++)); do
+        printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-35s ${YELLOW}|${WHITE} %-17s ${YELLOW}|${WHITE} %-3d ${YELLOW}|${WHITE} %-4s ${YELLOW}|\n" $((c+1)) "${essids[${c}]}" "${macs[${c}]}" ${channels[${c}]} "${encryptions[${c}]}"
+    done
+
+    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}-------${WHITE}+"
 }
 
 ###########################################
@@ -288,7 +350,6 @@ select_interface() {
         ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
 
         show_wifi_list
-
 
     elif [ "${interfaces_number}" -le 0 ]; then
         echo ""
