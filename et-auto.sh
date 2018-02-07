@@ -117,21 +117,20 @@ get_chipset() {
 #   None
 ###########################################
 get_interfaces_list() {
-	unset interface_list
-	for interface in $(ls -1 /sys/class/net); do
-		if [ -f /sys/class/net/${interface}/uevent ]; then
-			if $(grep -q DEVTYPE=wlan /sys/class/net/${interface}/uevent)
-			then
-				interface_list="${interface_list}\n ${interface}"
-			fi
-		fi
-	done
-	if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
-		for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
-			interface_list="${interface_list}\n ${interface}"
-		done
-		interface_list="$(printf "${interface_list}" | sort -bu)"
-	fi
+    unset interface_list
+    for interface in $(ls -1 /sys/class/net); do
+        if [ -f /sys/class/net/${interface}/uevent ]; then
+            if $(grep -q DEVTYPE=wlan /sys/class/net/${interface}/uevent); then
+                interface_list="${interface_list}\n ${interface}"
+            fi
+        fi
+    done
+    if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
+        for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
+            interface_list="${interface_list}\n ${interface}"
+        done
+        interface_list="$(printf "${interface_list}" | sort -bu)"
+    fi
 }
 
 ###########################################
@@ -231,7 +230,7 @@ get_wifi_list() {
 
     airodump-ng -w ${capture_dir}/capture/capture --output-format csv -a ${wlan}
     take_needed=`cat ${capture_dir}/capture/capture-01.csv | egrep -a -n '(Station|CLIENT)' | awk -F : '{print $1}'`
-    take_needed=`expr ${take_needed} + 1`
+    take_needed=`expr ${take_needed} - 1`
     head -n ${take_needed} ${capture_dir}/capture/capture-01.csv &> ${capture_dir}/capture/capture-02.csv
 
     local mac
@@ -250,17 +249,14 @@ get_wifi_list() {
     local essid
     local key
 
-    # TODO(Ugnelis): remove bad entries.
-
     items_size=0
-    while IFS=, read mac fts lts channel speed encryption cypher auth power beacon iv lan_ip id_length essid key; do
+    while IFS=',' read mac fts lts channel speed encryption cypher auth power beacon iv lan_ip id_length essid key; do
         mac_lenght=${#mac}
         if [ "${mac_lenght}" -ge 17 ]; then
             macs["${items_size}"]=${mac}
             channels["${items_size}"]=${channel}
-            encryptions["${items_size}"]=${encryption}
-            essids["${items_size}"]=${essid}
-            echo ${essid}
+            encryptions["${items_size}"]=${encryption:1}
+            essids["${items_size}"]=${essid:1}
             items_size=$((items_size+1))
         fi
     done  < ${capture_dir}/capture/capture-02.csv
@@ -279,15 +275,15 @@ show_wifi_list() {
     get_wifi_list
 
     echo -ne '\033c'
-    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}-------${WHITE}+"
-    echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC   ${YELLOW}|"
-    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}-------${WHITE}+"
+    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
+    echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC  ${YELLOW}|"
+    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
 
     for (( c=0; c<${items_size}; c++)); do
         printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-35s ${YELLOW}|${WHITE} %-17s ${YELLOW}|${WHITE} %-3d ${YELLOW}|${WHITE} %-4s ${YELLOW}|\n" $((c+1)) "${essids[${c}]}" "${macs[${c}]}" ${channels[${c}]} "${encryptions[${c}]}"
     done
 
-    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}-------${WHITE}+"
+    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
 }
 
 ###########################################
@@ -415,8 +411,8 @@ main() {
                     echo ""
                     echo -e "${WHITE}     [${GREEN} ok ${WHITE}]${WHITE} See ${BOLD_YELLOW}you${WHITE} next time!"
                     echo ""
-			        exit
-			        ;;
+                    exit
+                    ;;
                 *)
                     echo ""
                     echo -e "${WHITE}     [${RED}!${WHITE}]${BOLD_RED} Input${WHITE} is out of range."
