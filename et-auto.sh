@@ -37,6 +37,8 @@ get_chipset() {
     local bus_info
     local device_id
     local driver
+    local interface=${1}
+    local ethtool_output=${2}
 
     if [ -f /sys/class/net/${interface}/device/modalias ]; then
         bus="$(cut -d ":" -f 1 /sys/class/net/${interface}/device/modalias)"
@@ -46,7 +48,7 @@ get_chipset() {
 
         # Broadcom appears to define all the internal buses so we have to detect them here.
         elif [ "${bus}" = "pci" -o "${bus}" = "pcmcia" ]; then
-            if [ -f /sys/class/net/$iface/device/vendor ] && [ -f /sys/class/net/$iface/device/device ]; then
+            if [ -f /sys/class/net/${interface}/device/vendor ] && [ -f /sys/class/net/${interface}/device/device ]; then
                 device_id="$(cat /sys/class/net/${interface}/device/vendor):$(cat /sys/class/net/${interface}/device/device)"
                 chipset="$(lspci -d ${device_id} | cut -f3- -d ":" | sed 's/Wireless LAN Controller //g;s/ Network Connection//g;s/ Wireless Adapter//;s/^ //')"
             else
@@ -55,7 +57,7 @@ get_chipset() {
                 device_id="$(lspci -nn | grep "${bus_info}" | grep '[[0-9][0-9][0-9][0-9]:[0-9][0-9][0-9][0-9]' -o)"
             fi
         elif [ "${bus}" = "sdio" ]; then
-            if [ -f /sys/class/net/$iface/device/vendor ] && [ -f /sys/class/net/$iface/device/device ]; then
+            if [ -f /sys/class/net/${interface}/device/vendor ] && [ -f /sys/class/net/${interface}/device/device ]; then
                 device_id="$(cat /sys/class/net/${interface}/device/vendor):$(cat /sys/class/net/${interface}/device/device)"
             fi
             if [ "${device_id}" = '0x02d0:0x4330' ]; then
@@ -88,7 +90,7 @@ get_chipset() {
         else
             chipset="Not pci, usb, or sdio."
         fi
-    elif [ -f /sys/class/net/$iface/device/idVendor ] && [ -f /sys/class/net/$iface/device/idProduct ]; then
+    elif [ -f /sys/class/net/${interface}/device/idVendor ] && [ -f /sys/class/net/${interface}/device/idProduct ]; then
         device_id="$(cat /sys/class/net/${interface}/device/idVendor):$(cat /sys/class/net/${interface}/device/idProduct)"
         chipset="$(lsusb | grep -i "${device_id}" | head -n1 - | cut -f3- -d ":" | sed 's/^....//;s/ Network Connection//g;s/ Wireless Adapter//g;s/^ //')"
     elif [ "${driver}" = "mac80211_hwsim" ]; then
@@ -189,7 +191,7 @@ get_interfaces_chipsets() {
 
         ethtool_output="$(ethtool -i "${interface}" 2>&1)"
         if [ "${ethtool_output}" != "Cannot get driver information: Operation not supported" ]; then
-            get_chipset ${interface}
+            get_chipset ${interface} ${ethtool_output}
             interfaces["${chipsets_number}"]="${interface}"
             chipsets["${chipsets_number}"]="${chipset}"
         else
@@ -204,7 +206,7 @@ get_interfaces_chipsets() {
 }
 
 ###########################################
-# Get wifi hot spots list.
+# Get Wi-Fi hot spots list.
 # Globals:
 #  macs
 #  channels
@@ -212,11 +214,12 @@ get_interfaces_chipsets() {
 #  essids
 #  items_size
 # Arguments:
-#   None
+#   wlan
 # Returns:
 #   None
 ###########################################
 get_wifi_list() {
+    wlan=${1}
     local capture_dir="."
 
     check_dir=`ls ${capture_dir} | grep -E '^capture$'`
@@ -263,16 +266,17 @@ get_wifi_list() {
 }
 
 ###########################################
-# Show wifi hot spots list.
+# Select Wi-Fi from the hot spots list.
 # Globals:
 #   None
 # Arguments:
-#   None
+#   wlan
 # Returns:
 #   None
 ###########################################
-show_wifi_list() {
-    get_wifi_list
+select_wifi() {
+    local wlan=${1}
+    get_wifi_list ${wlan}
 
     echo -ne '\033c'
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
@@ -284,6 +288,25 @@ show_wifi_list() {
     done
 
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
+
+    # Wi-Fi selection part.
+    local wifi_selection
+    local is_wifi_selected=false
+
+    while [[ "${is_wifi_selected}" != "true" ]]; do
+        echo ""
+        echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${items_size}${WHITE}]: ${GREEN}"
+
+        read wifi_selection
+        if [[ "${wifi_selection}" =~ ^[+-]?[0-9]+$ ]]; then
+            if [ "${wifi_selection}" -ge 1 ] && [ "${wifi_selection}" -le "${items_size}" ]; then
+                is_wifi_selected=true
+                wifi_index=$((wifi_selection-1))
+            fi
+        fi
+    done
+
+    echo "${macs["${wifi_index}"]} ${channels["${wifi_index}"]} ${encryptions["${wifi_index}"]} ${essids["${wifi_index}"]}"
 }
 
 ###########################################
@@ -324,7 +347,7 @@ select_interface() {
 
         # Interface selection part.
         local interface_selection
-        is_interface_selected=false
+        local is_interface_selected=false
 
 
         while [[ "${is_interface_selected}" != "true" ]]; do
@@ -336,7 +359,6 @@ select_interface() {
                 if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
                     is_interface_selected=true
                     wlan=${interfaces[$((interface_selection-1))]}
-
                 fi
             fi
         done
@@ -345,7 +367,7 @@ select_interface() {
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
         ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
 
-        show_wifi_list
+        select_wifi ${wlan}
 
     elif [ "${interfaces_number}" -le 0 ]; then
         echo ""
