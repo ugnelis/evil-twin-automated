@@ -114,23 +114,36 @@ get_chipset() {
 # Globals:
 #   interface_list
 # Arguments:
-#   None
+#   get_only_wlan
 # Returns:
 #   None
 ###########################################
 get_interfaces_list() {
+    local get_only_wlan=${1}
     unset interface_list
-    for interface in $(ls -1 /sys/class/net); do
-        if [ -f /sys/class/net/${interface}/uevent ]; then
-            if $(grep -q DEVTYPE=wlan /sys/class/net/${interface}/uevent); then
-                interface_list="${interface_list}\n ${interface}"
+    if [ "${get_only_wlan}" == true ]; then
+        for interface in $(ls -1 /sys/class/net); do
+            if [ -f /sys/class/net/${interface}/uevent ]; then
+                if (( $(grep -q DEVTYPE=wlan /sys/class/net/${interface}/uevent) )); then
+                    interface_list="${interface_list}\n ${interface}"
+                fi
             fi
-        fi
-    done
-    if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
-        for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
-            interface_list="${interface_list}\n ${interface}"
         done
+        if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
+            for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
+                interface_list="${interface_list}\n ${interface}"
+            done
+            interface_list="$(printf "${interface_list}" | sort -bu)"
+        fi
+    else
+        for interface in $(ls -1 /sys/class/net); do
+            if [ -f /sys/class/net/${interface}/uevent ]; then
+                if (( $(grep -c DEVTYPE=bridge /sys/class/net/${interface}/uevent) == 0 )); then
+                    interface_list="${interface_list}\n ${interface}"
+                fi
+            fi
+        done
+
         interface_list="$(printf "${interface_list}" | sort -bu)"
     fi
 }
@@ -179,12 +192,13 @@ check_programs() {
 #   chipsets
 #   ethtool_output
 # Arguments:
-#   None
+#   get_only_wlan
 # Returns:
 #   None
 ###########################################
 get_interfaces_chipsets() {
-    get_interfaces_list
+    local get_only_wlan=${1}
+    get_interfaces_list ${get_only_wlan}
     chipsets_number=0
     for interface in $(printf "${interface_list}"); do
         unset ethtool_output FROM FIRMWARE STACK MADWIFI MAC80211 BUSADDR chipset EXTENDED PHYDEV ifacet DRIVERt FIELD1 FIELD1t FIELD2 FIELD2t CHIPSETt
@@ -257,7 +271,7 @@ get_wifi_list() {
         mac_lenght=${#mac}
         if [ "${mac_lenght}" -ge 17 ]; then
             macs["${items_size}"]=${mac}
-            channels["${items_size}"]=${channel}
+            channels["${items_size}"        echo ]=${channel}
             encryptions["${items_size}"]=${encryption:1}
             essids["${items_size}"]=${essid:1}
             items_size=$((items_size+1))
@@ -283,7 +297,7 @@ select_wifi() {
     echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC  ${YELLOW}|"
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
 
-    for (( c=0; c<${items_size}; c++)); do
+    for (( c=0; c<${items_size}; c++ )); do
         printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-35s ${YELLOW}|${WHITE} %-17s ${YELLOW}|${WHITE} %-3d ${YELLOW}|${WHITE} %-4s ${YELLOW}|\n" $((c+1)) "${essids[${c}]}" "${macs[${c}]}" ${channels[${c}]} "${encryptions[${c}]}"
     done
 
@@ -292,7 +306,7 @@ select_wifi() {
     # Wi-Fi selection part.
     local wifi_selection
     local is_wifi_selected=false
-
+Z0
     while [[ "${is_wifi_selected}" != "true" ]]; do
         echo ""
         echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${items_size}${WHITE}]: ${GREEN}"
@@ -327,7 +341,7 @@ select_interface() {
     echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for wireless devices${WHITE}..."
 
     if [ "${interfaces_number}" -ge 1 ] && [ "${interfaces_monitor_mode}" = "" ]; then
-        get_interfaces_chipsets
+        get_interfaces_chipsets true
         echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} wireless device(s)${WHITE}."
         echo ""
 
@@ -336,7 +350,7 @@ select_interface() {
         echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipsets                                                ${YELLOW}|"
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
 
-        for (( c=0; c<${chipsets_number}; c++)); do
+        for (( c=0; c<${chipsets_number}; c++ )); do
             printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]}"
         done
 
@@ -364,7 +378,7 @@ select_interface() {
         done
 
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Enabling monitor mode on ${BOLD_PURPLE}$wlan${WHITE}."
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREget_wlanEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
         ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
 
         select_wifi ${wlan}
