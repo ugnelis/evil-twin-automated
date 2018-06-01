@@ -164,11 +164,12 @@ get_interfaces_list() {
 ###########################################
 check_programs() {
     # Check if lspci is installed.
+    is_error=false
     if [ -d /sys/bus/pci ] || [ -d /sys/bus/pci_express ] || [ -d /proc/bus/pci ]; then
         if [ ! -x "$(command -v lspci 2>&1)" ]; then
             echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lspci{GREEN} from your distro's package manager${WHITE}."
             echo ""
-            exit 1
+            is_error=true
         fi
     fi
 
@@ -177,14 +178,25 @@ check_programs() {
         if [ ! -x "$(command -v lsusb 2>&1)" ]; then
             echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lsusb${GREEN} from your distro's package manager${WHITE}."
             echo ""
-            exit 1
+            is_error=true
         fi
     fi
 
     # Check if aircrack-ng is installed.
-    if ! [ -x "$(command -v aircrack-ng)" ]; then
+    if ! [ -x "$(command -v aircrack-ng 2>&1)" ]; then
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}aircrack-ng${GREEN} from your distro's package manager${WHITE}."
         echo ""
+        is_error=true
+    fi
+
+    # Check if xterm is installed.
+    if ! [ -x "$(command -v xterm 2>&1)" ]; then
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}xterm${GREEN} from your distro's package manager${WHITE}."
+        echo ""
+        is_error=true
+    fi
+
+    if [ "${is_error}" == true ]; then
         exit 1
     fi
 }
@@ -356,11 +368,11 @@ select_internet_interface() {
 
     echo -ne '\033c'
     echo ""
-    echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for interfaces${WHITE}..."
+    echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for internet interfaces${WHITE}..."
 
     if [ "${interfaces_number}" -ge 1 ]; then
         get_interfaces_chipsets false
-        echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} interface(s)${WHITE}."
+        echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} internet interface(s)${WHITE}."
         echo ""
 
         # Formatting table.
@@ -384,7 +396,7 @@ select_internet_interface() {
 
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of interface ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of internet interface ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
 
             read interface_selection
             if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
@@ -396,7 +408,7 @@ select_internet_interface() {
         done
     elif [ "${interfaces_number}" -le 0 ]; then
         echo ""
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} No interfaces ${PURPLE}found${WHITE}."
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} No internet interfaces ${PURPLE}found${WHITE}."
         echo ""
     fi
 }
@@ -469,6 +481,20 @@ select_interface() {
     fi
 }
 
+###########################################
+# Open new terminal window.
+# Globals:
+#   none
+# Arguments:
+#   command
+# Returns:
+#   None
+###########################################
+open_terminal() {
+    local command=${1}
+    xterm -hold -e "${command}" > /dev/null 2>&1 &
+}
+
 main() {
     local result='main'
     while [ "${result}" == 'main' ];
@@ -525,6 +551,8 @@ main() {
                     sleep 1
                     select_internet_interface
                     echo "${lan}"
+                    # TODO(ugnelis): remove "_TEST".
+                    open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}"
                     ;;
                 "2")
                     echo ""
