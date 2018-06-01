@@ -29,6 +29,7 @@ DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 #   chipset
 # Arguments:
 #   interface
+#   ethtool_output
 # Returns:
 #   None
 ###########################################
@@ -113,6 +114,7 @@ get_chipset() {
 # Get WI-FI interfaces.
 # Globals:
 #   interface_list
+#   interfaces_number
 # Arguments:
 #   get_only_wlan
 # Returns:
@@ -121,6 +123,7 @@ get_chipset() {
 get_interfaces_list() {
     local get_only_wlan=${1}
     unset interface_list
+    interfaces_number=0
     if [ "${get_only_wlan}" == true ]; then
         for interface in $(ls -1 /sys/class/net); do
             if [ -f /sys/class/net/${interface}/uevent ]; then
@@ -128,6 +131,7 @@ get_interfaces_list() {
                     interface_list="${interface_list}\n ${interface}"
                 fi
             fi
+            interfaces_number=$((interfaces_number+1))
         done
         if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
             for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
@@ -142,6 +146,7 @@ get_interfaces_list() {
                     interface_list="${interface_list}\n ${interface}"
                 fi
             fi
+            interfaces_number=$((interfaces_number+1))
         done
 
         interface_list="$(printf "${interface_list}" | sort -bu)"
@@ -203,19 +208,26 @@ get_interfaces_chipsets() {
     for interface in $(printf "${interface_list}"); do
         unset ethtool_output FROM FIRMWARE STACK MADWIFI MAC80211 BUSADDR chipset EXTENDED PHYDEV ifacet DRIVERt FIELD1 FIELD1t FIELD2 FIELD2t CHIPSETt
 
-        ethtool_output="$(ethtool -i "${interface}" 2>&1)"
-        if [ "${ethtool_output}" != "Cannot get driver information: Operation not supported" ]; then
-            get_chipset ${interface} ${ethtool_output}
+        if [ "${get_only_wlan}" == true ]; then
+            ethtool_output="$(ethtool -i "${interface}" 2>&1)"
+            if [ "${ethtool_output}" != "Cannot get driver information: Operation not supported" ]; then
+                get_chipset ${interface} ${ethtool_output}
+                interfaces["${chipsets_number}"]="${interface}"
+                chipsets["${chipsets_number}"]="${chipset}"
+            else
+                echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} ${BOLD_PURPLE}ethtool${GREEN} failed${WHITE}..."
+                echo ""
+                echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Only mac80211 devices on kernel 2.6.33 or higher are officially supported by airmon-ng${WHITE}."
+                echo ""
+                exit 1
+            fi
+            chipsets_number=$((chipsets_number+1))
+        else
+            get_chipset ${interface}
             interfaces["${chipsets_number}"]="${interface}"
             chipsets["${chipsets_number}"]="${chipset}"
-        else
-            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} ${BOLD_PURPLE}ethtool${GREEN} failed${WHITE}..."
-            echo ""
-            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Only mac80211 devices on kernel 2.6.33 or higher are officially supported by airmon-ng${WHITE}."
-            echo ""
-            exit 1
+            chipsets_number=$((chipsets_number+1))
         fi
-        chipsets_number=$((chipsets_number+1))
     done
 }
 
@@ -271,7 +283,7 @@ get_wifi_list() {
         mac_lenght=${#mac}
         if [ "${mac_lenght}" -ge 17 ]; then
             macs["${items_size}"]=${mac}
-            channels["${items_size}"        echo ]=${channel}
+            channels["${items_size}"]=${channel}
             encryptions["${items_size}"]=${encryption:1}
             essids["${items_size}"]=${essid:1}
             items_size=$((items_size+1))
@@ -282,7 +294,9 @@ get_wifi_list() {
 ###########################################
 # Select Wi-Fi from the hot spots list.
 # Globals:
-#   None
+#   selected_essid
+#   selected_bssid
+#   selected_channel
 # Arguments:
 #   wlan
 # Returns:
@@ -291,6 +305,9 @@ get_wifi_list() {
 select_wifi() {
     local wlan=${1}
     get_wifi_list ${wlan}
+    unset selected_essid
+    unset selected_bssid
+    unset selected_channel
 
     echo -ne '\033c'
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
@@ -306,7 +323,7 @@ select_wifi() {
     # Wi-Fi selection part.
     local wifi_selection
     local is_wifi_selected=false
-Z0
+
     while [[ "${is_wifi_selected}" != "true" ]]; do
         echo ""
         echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${items_size}${WHITE}]: ${GREEN}"
@@ -320,7 +337,68 @@ Z0
         fi
     done
 
-    echo "${macs["${wifi_index}"]} ${channels["${wifi_index}"]} ${encryptions["${wifi_index}"]} ${essids["${wifi_index}"]}"
+    selected_essid=${essids["${wifi_index}"]}
+    selected_bssid=${macs["${wifi_index}"]}
+    selected_channel=${channels["${wifi_index}"]}
+}
+
+###########################################
+# Get chipsets of the internet interfaces.
+# Globals:
+#   lan
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+select_internet_interface() {
+    local interfaces_number=`ifconfig 2>&1 | grep 'HWaddr' | wc -l`
+
+    echo -ne '\033c'
+    echo ""
+    echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for interfaces${WHITE}..."
+
+    if [ "${interfaces_number}" -ge 1 ]; then
+        get_interfaces_chipsets false
+        echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} interface(s)${WHITE}."
+        echo ""
+
+        # Formatting table.
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+        echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipsets                                                ${YELLOW}|"
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+
+        for (( c=0; c<${chipsets_number}; c++ )); do
+            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]:0:55}"
+        done
+
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+
+
+        echo ""
+
+        # Interface selection part.
+        local interface_selection
+        local is_interface_selected=false
+
+
+        while [[ "${is_interface_selected}" != "true" ]]; do
+            echo -en "\033[1A\033[2K"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of interface ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
+
+            read interface_selection
+            if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
+                if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
+                    is_interface_selected=true
+                    lan=${interfaces[$((interface_selection-1))]}
+                fi
+            fi
+        done
+    elif [ "${interfaces_number}" -le 0 ]; then
+        echo ""
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} No interfaces ${PURPLE}found${WHITE}."
+        echo ""
+    fi
 }
 
 ###########################################
@@ -351,7 +429,7 @@ select_interface() {
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
 
         for (( c=0; c<${chipsets_number}; c++ )); do
-            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]}"
+            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]:0:55}"
         done
 
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
@@ -366,7 +444,7 @@ select_interface() {
 
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${interfaces_number}${WHITE}]: ${GREEN}"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
 
             read interface_selection
             if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
@@ -378,18 +456,16 @@ select_interface() {
         done
 
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Enabling monitor mode on ${BOLD_PURPLE}$wlan${WHITE}."
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREget_wlanEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
         ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
 
-        select_wifi ${wlan}
-
-    elif [ "${interfaces_number}" -le 0 ]; then
-        echo ""
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Is no wireless device to put into ${PURPLE}monitor mode${WHITE}."
-        echo ""
     elif [ "${interfaces_number}" -le 0 ] && [ "${interfaces_monitor_mode}" = "" ]; then
         echo ""
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
+    elif [ "${interfaces_number}" -le 0 ]; then
+        echo ""
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Some wireless device is put into ${PURPLE}monitor mode${WHITE}."
+        echo ""
     fi
 }
 
@@ -442,6 +518,13 @@ main() {
             case "${menu_selection}" in
                 "1")
                     select_interface
+                    echo "${wlan}"
+                    sleep 1
+                    select_wifi ${wlan}
+                    echo "${selected_essid} ${selected_bssid} ${selected_channel}"
+                    sleep 1
+                    select_internet_interface
+                    echo "${lan}"
                     ;;
                 "2")
                     echo ""
