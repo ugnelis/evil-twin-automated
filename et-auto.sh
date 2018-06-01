@@ -487,12 +487,14 @@ select_interface() {
 #   none
 # Arguments:
 #   command
+#   title
 # Returns:
 #   None
 ###########################################
 open_terminal() {
     local command=${1}
-    xterm -hold -e "${command}" > /dev/null 2>&1 &
+    local title=${2}
+    xterm -hold -T "${title}" -e "${command}" > /dev/null 2>&1
 }
 
 main() {
@@ -552,7 +554,7 @@ main() {
                     select_internet_interface
                     echo "${lan}"
                     # TODO(ugnelis): remove "_TEST".
-                    open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}"
+                    open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
                     ;;
                 "2")
                     echo ""
