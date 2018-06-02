@@ -23,6 +23,15 @@ BOLD_WHITE='\e[1;37m'       # white
 # Default
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
+# Network variables.
+ip_subnet=192.168.1.0
+ip_mask=255.255.255.0
+ip_broadcast=192.168.1.255
+ip_router=192.168.1.1
+ip_range_start=192.168.1.20
+ip_range_end=192.168.1.60
+dns=8.8.8.8
+
 ###########################################
 # Get information of the chipset.
 # Globals:
@@ -96,8 +105,7 @@ get_chipset() {
         chipset="$(lsusb | grep -i "${device_id}" | head -n1 - | cut -f3- -d ":" | sed 's/^....//;s/ Network Connection//g;s/ Wireless Adapter//g;s/^ //')"
     elif [ "${driver}" = "mac80211_hwsim" ]; then
         chipset="Software simulator of 802.11 radio(s) for mac80211"
-    elif $(printf "${ethtool_output}" | awk '/bus-info/ {print $2}' | grep -q bcma)
-    then
+    elif $(printf "${ethtool_output}" | awk '/bus-info/ {print $2}' | grep -q bcma); then
         bus="bcma"
 
         if [ "${driver}" = "brcmsmac" ] || [ "${driver}" = "brcmfmac" ] || [ "${driver}" = "b43" ]; then
@@ -192,6 +200,13 @@ check_programs() {
     # Check if xterm is installed.
     if ! [ -x "$(command -v xterm 2>&1)" ]; then
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}xterm${GREEN} from your distro's package manager${WHITE}."
+        echo ""
+        is_error=true
+    fi
+
+    # Check if isc-dhcp-server is installed.
+    if [[ "$(dpkg-query -l | grep -c isc-dhcp-server)" -eq 0 ]]; then
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}isc-dhcp-server${GREEN} from your distro's package manager${WHITE}."
         echo ""
         is_error=true
     fi
