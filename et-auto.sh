@@ -23,14 +23,18 @@ BOLD_WHITE='\e[1;37m'       # white
 # Default
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
+# Variables.
+TMP_DIR="./tmp/"
+
 # Network variables.
-ip_subnet=192.168.1.0
-ip_mask=255.255.255.0
-ip_broadcast=192.168.1.255
-ip_router=192.168.1.1
-ip_range_start=192.168.1.20
-ip_range_end=192.168.1.60
-dns=8.8.8.8
+IP_SUBNET=192.168.1.0
+IP_MASK=255.255.255.0
+IP_BROADCAST=192.168.1.255
+IP_ROUTER=192.168.1.1
+IP_RANGE_START=192.168.1.20
+IP_RANGE_END=192.168.1.60
+DNS=8.8.8.8
+DHCPD_FILE="dhcpd.conf"
 
 ###########################################
 # Get information of the chipset.
@@ -259,13 +263,39 @@ get_interfaces_chipsets() {
 }
 
 ###########################################
+# Create DHCPD config file.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+create_dhcpd_config_file() {
+    local file_path="${TMP_DIR}/${DHCPD_FILE}"
+    rm file_path
+    echo ${file_path}
+    {
+        echo -e "authoritative;"
+        echo -e "default-lease-time 600;"
+        echo -e "max-lease-time 7200;"
+        echo -e "subnet ${IP_SUBNET} netmask ${IP_MASK} {"
+        echo -e "\toption broadcast-address ${IP_BROADCAST};"
+        echo -e "\toption routers ${IP_ROUTER};"
+        echo -e "\toption subnet-mask ${IP_MASK};"
+        echo -e "\trange ${IP_RANGE_START} ${IP_RANGE_END};"
+        echo -e "}"
+    } >> ${file_path}
+}
+
+###########################################
 # Get Wi-Fi hot spots list.
 # Globals:
-#  macs
-#  channels
-#  encryptions
-#  essids
-#  items_size
+#   macs
+#   channels
+#   encryptions
+#   essids
+#   items_size
 # Arguments:
 #   wlan
 # Returns:
@@ -273,14 +303,14 @@ get_interfaces_chipsets() {
 ###########################################
 get_wifi_list() {
     wlan=${1}
-    local capture_dir="."
+    local capture_dir=${TMP_DIR}
 
     check_dir=`ls ${capture_dir} | grep -E '^capture$'`
     if [ "${check_dir}" != "" ];then
         rm -rf ${capture_dir}/capture
-        mkdir ${capture_dir}/capture
+        mkdir -p ${capture_dir}/capture
     else
-        mkdir ${capture_dir}/capture
+        mkdir -p ${capture_dir}/capture
     fi
     trap - SIGINT SIGQUIT SIGTSTP
 
@@ -499,7 +529,7 @@ select_interface() {
 ###########################################
 # Open new terminal window.
 # Globals:
-#   none
+#   None
 # Arguments:
 #   command
 #   title
