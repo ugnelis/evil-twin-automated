@@ -539,7 +539,7 @@ select_interface() {
 open_terminal() {
     local command=${1}
     local title=${2}
-    xterm -hold -T "${title}" -e "${command}" > /dev/null 2>&1
+    xterm -hold -T "${title}" -e "${command}" > /dev/null 2>&1 &
 }
 
 main() {
@@ -600,6 +600,16 @@ main() {
                     echo "${lan}"
                     # TODO(ugnelis): remove "_TEST".
                     open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
+                    sleep 2
+                    echo 12345
+                    iptables -P FORWARD ACCEPT
+                    echo "1" > /proc/sys/net/ipv4/ip_forward
+                    iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
+                    # TODO(ugnelis): here might be a problem.
+                    iptables -A INPUT -p icmp --icmp-type 8 -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+                    iptables -A INPUT -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -j DROP
+                    open_terminal "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" ${lan} 2>&1 | tee -a ${TMP_DIR}/clts.txt" "DHCP"
+                    sleep 2
                     ;;
                 "2")
                     echo ""
