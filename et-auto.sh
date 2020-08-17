@@ -599,12 +599,17 @@ main() {
                     select_internet_interface
                     echo "${lan}"
                     # TODO(ugnelis): remove "_TEST".
-                    open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
+                    open_terminal "airbase-ng -e ${selected_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
+                    # open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
                     sleep 2
                     echo 12345
                     iptables -P FORWARD ACCEPT
                     echo "1" > /proc/sys/net/ipv4/ip_forward
                     iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
+                    # TODO(ugnelis): provide internet access
+                    # ifconfig at0 up
+                    # ifconfig at0 192.168.3.1 netmask 255.255.255.0
+                    # route add -net 192.168.3.0 netmask 255.255.255.0 gw 192.168.3.1
                     # TODO(ugnelis): here might be a problem.
                     iptables -A INPUT -p icmp --icmp-type 8 -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
                     iptables -A INPUT -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -j DROP
