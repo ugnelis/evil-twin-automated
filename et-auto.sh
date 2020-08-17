@@ -23,12 +23,26 @@ BOLD_WHITE='\e[1;37m'       # white
 # Default
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
+# Variables.
+TMP_DIR="./tmp/"
+
+# Network variables.
+IP_SUBNET=192.168.1.0
+IP_MASK=255.255.255.0
+IP_BROADCAST=192.168.1.255
+IP_ROUTER=192.168.1.1
+IP_RANGE_START=192.168.1.20
+IP_RANGE_END=192.168.1.60
+DNS=8.8.8.8
+DHCPD_FILE="dhcpd.conf"
+
 ###########################################
 # Get information of the chipset.
 # Globals:
 #   chipset
 # Arguments:
 #   interface
+#   ethtool_output
 # Returns:
 #   None
 ###########################################
@@ -95,8 +109,7 @@ get_chipset() {
         chipset="$(lsusb | grep -i "${device_id}" | head -n1 - | cut -f3- -d ":" | sed 's/^....//;s/ Network Connection//g;s/ Wireless Adapter//g;s/^ //')"
     elif [ "${driver}" = "mac80211_hwsim" ]; then
         chipset="Software simulator of 802.11 radio(s) for mac80211"
-    elif $(printf "${ethtool_output}" | awk '/bus-info/ {print $2}' | grep -q bcma)
-    then
+    elif $(printf "${ethtool_output}" | awk '/bus-info/ {print $2}' | grep -q bcma); then
         bus="bcma"
 
         if [ "${driver}" = "brcmsmac" ] || [ "${driver}" = "brcmfmac" ] || [ "${driver}" = "b43" ]; then
@@ -113,24 +126,41 @@ get_chipset() {
 # Get WI-FI interfaces.
 # Globals:
 #   interface_list
+#   interfaces_number
 # Arguments:
-#   None
+#   get_only_wlan
 # Returns:
 #   None
 ###########################################
 get_interfaces_list() {
+    local get_only_wlan=${1}
     unset interface_list
-    for interface in $(ls -1 /sys/class/net); do
-        if [ -f /sys/class/net/${interface}/uevent ]; then
-            if $(grep -q DEVTYPE=wlan /sys/class/net/${interface}/uevent); then
-                interface_list="${interface_list}\n ${interface}"
+    interfaces_number=0
+    if [ "${get_only_wlan}" == true ]; then
+        for interface in $(ls -1 /sys/class/net); do
+            if [ -f /sys/class/net/${interface}/uevent ]; then
+                if (( $(grep -q DEVTYPE=wlan /sys/class/net/${interface}/uevent) )); then
+                    interface_list="${interface_list}\n ${interface}"
+                fi
             fi
-        fi
-    done
-    if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
-        for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
-            interface_list="${interface_list}\n ${interface}"
+            interfaces_number=$((interfaces_number+1))
         done
+        if [ -x "$(command -v iwconfig 2>&1)" ] && [ -x "$(command -v sort 2>&1)" ]; then
+            for interface in $(iwconfig 2> /dev/null | sed 's/^\([a-zA-Z0-9_.]*\) .*/\1/'); do
+                interface_list="${interface_list}\n ${interface}"
+            done
+            interface_list="$(printf "${interface_list}" | sort -bu)"
+        fi
+    else
+        for interface in $(ls -1 /sys/class/net); do
+            if [ -f /sys/class/net/${interface}/uevent ]; then
+                if (( $(grep -c DEVTYPE=bridge /sys/class/net/${interface}/uevent) == 0 )); then
+                    interface_list="${interface_list}\n ${interface}"
+                fi
+            fi
+            interfaces_number=$((interfaces_number+1))
+        done
+
         interface_list="$(printf "${interface_list}" | sort -bu)"
     fi
 }
@@ -146,11 +176,12 @@ get_interfaces_list() {
 ###########################################
 check_programs() {
     # Check if lspci is installed.
+    is_error=false
     if [ -d /sys/bus/pci ] || [ -d /sys/bus/pci_express ] || [ -d /proc/bus/pci ]; then
         if [ ! -x "$(command -v lspci 2>&1)" ]; then
             echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lspci{GREEN} from your distro's package manager${WHITE}."
             echo ""
-            exit 1
+            is_error=true
         fi
     fi
 
@@ -159,14 +190,32 @@ check_programs() {
         if [ ! -x "$(command -v lsusb 2>&1)" ]; then
             echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lsusb${GREEN} from your distro's package manager${WHITE}."
             echo ""
-            exit 1
+            is_error=true
         fi
     fi
 
     # Check if aircrack-ng is installed.
-    if ! [ -x "$(command -v aircrack-ng)" ]; then
+    if ! [ -x "$(command -v aircrack-ng 2>&1)" ]; then
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}aircrack-ng${GREEN} from your distro's package manager${WHITE}."
         echo ""
+        is_error=true
+    fi
+
+    # Check if xterm is installed.
+    if ! [ -x "$(command -v xterm 2>&1)" ]; then
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}xterm${GREEN} from your distro's package manager${WHITE}."
+        echo ""
+        is_error=true
+    fi
+
+    # Check if isc-dhcp-server is installed.
+    if [[ "$(dpkg-query -l | grep -c isc-dhcp-server)" -eq 0 ]]; then
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}isc-dhcp-server${GREEN} from your distro's package manager${WHITE}."
+        echo ""
+        is_error=true
+    fi
+
+    if [ "${is_error}" == true ]; then
         exit 1
     fi
 }
@@ -179,40 +228,74 @@ check_programs() {
 #   chipsets
 #   ethtool_output
 # Arguments:
-#   None
+#   get_only_wlan
 # Returns:
 #   None
 ###########################################
 get_interfaces_chipsets() {
-    get_interfaces_list
+    local get_only_wlan=${1}
+    get_interfaces_list ${get_only_wlan}
     chipsets_number=0
     for interface in $(printf "${interface_list}"); do
         unset ethtool_output FROM FIRMWARE STACK MADWIFI MAC80211 BUSADDR chipset EXTENDED PHYDEV ifacet DRIVERt FIELD1 FIELD1t FIELD2 FIELD2t CHIPSETt
 
-        ethtool_output="$(ethtool -i "${interface}" 2>&1)"
-        if [ "${ethtool_output}" != "Cannot get driver information: Operation not supported" ]; then
-            get_chipset ${interface} ${ethtool_output}
+        if [ "${get_only_wlan}" == true ]; then
+            ethtool_output="$(ethtool -i "${interface}" 2>&1)"
+            if [ "${ethtool_output}" != "Cannot get driver information: Operation not supported" ]; then
+                get_chipset ${interface} ${ethtool_output}
+                interfaces["${chipsets_number}"]="${interface}"
+                chipsets["${chipsets_number}"]="${chipset}"
+            else
+                echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} ${BOLD_PURPLE}ethtool${GREEN} failed${WHITE}..."
+                echo ""
+                echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Only mac80211 devices on kernel 2.6.33 or higher are officially supported by airmon-ng${WHITE}."
+                echo ""
+                exit 1
+            fi
+            chipsets_number=$((chipsets_number+1))
+        else
+            get_chipset ${interface}
             interfaces["${chipsets_number}"]="${interface}"
             chipsets["${chipsets_number}"]="${chipset}"
-        else
-            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} ${BOLD_PURPLE}ethtool${GREEN} failed${WHITE}..."
-            echo ""
-            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Only mac80211 devices on kernel 2.6.33 or higher are officially supported by airmon-ng${WHITE}."
-            echo ""
-            exit 1
+            chipsets_number=$((chipsets_number+1))
         fi
-        chipsets_number=$((chipsets_number+1))
     done
+}
+
+###########################################
+# Create DHCPD config file.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+create_dhcpd_config_file() {
+    local file_path="${TMP_DIR}/${DHCPD_FILE}"
+    rm file_path
+    echo ${file_path}
+    {
+        echo -e "authoritative;"
+        echo -e "default-lease-time 600;"
+        echo -e "max-lease-time 7200;"
+        echo -e "subnet ${IP_SUBNET} netmask ${IP_MASK} {"
+        echo -e "\toption broadcast-address ${IP_BROADCAST};"
+        echo -e "\toption routers ${IP_ROUTER};"
+        echo -e "\toption subnet-mask ${IP_MASK};"
+        echo -e "\trange ${IP_RANGE_START} ${IP_RANGE_END};"
+        echo -e "}"
+    } >> ${file_path}
 }
 
 ###########################################
 # Get Wi-Fi hot spots list.
 # Globals:
-#  macs
-#  channels
-#  encryptions
-#  essids
-#  items_size
+#   macs
+#   channels
+#   encryptions
+#   essids
+#   items_size
 # Arguments:
 #   wlan
 # Returns:
@@ -220,14 +303,14 @@ get_interfaces_chipsets() {
 ###########################################
 get_wifi_list() {
     wlan=${1}
-    local capture_dir="."
+    local capture_dir=${TMP_DIR}
 
     check_dir=`ls ${capture_dir} | grep -E '^capture$'`
     if [ "${check_dir}" != "" ];then
         rm -rf ${capture_dir}/capture
-        mkdir ${capture_dir}/capture
+        mkdir -p ${capture_dir}/capture
     else
-        mkdir ${capture_dir}/capture
+        mkdir -p ${capture_dir}/capture
     fi
     trap - SIGINT SIGQUIT SIGTSTP
 
@@ -268,7 +351,9 @@ get_wifi_list() {
 ###########################################
 # Select Wi-Fi from the hot spots list.
 # Globals:
-#   None
+#   selected_essid
+#   selected_bssid
+#   selected_channel
 # Arguments:
 #   wlan
 # Returns:
@@ -277,13 +362,16 @@ get_wifi_list() {
 select_wifi() {
     local wlan=${1}
     get_wifi_list ${wlan}
+    unset selected_essid
+    unset selected_bssid
+    unset selected_channel
 
     echo -ne '\033c'
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
     echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC  ${YELLOW}|"
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
 
-    for (( c=0; c<${items_size}; c++)); do
+    for (( c=0; c<${items_size}; c++ )); do
         printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-35s ${YELLOW}|${WHITE} %-17s ${YELLOW}|${WHITE} %-3d ${YELLOW}|${WHITE} %-4s ${YELLOW}|\n" $((c+1)) "${essids[${c}]}" "${macs[${c}]}" ${channels[${c}]} "${encryptions[${c}]}"
     done
 
@@ -306,7 +394,68 @@ select_wifi() {
         fi
     done
 
-    echo "${macs["${wifi_index}"]} ${channels["${wifi_index}"]} ${encryptions["${wifi_index}"]} ${essids["${wifi_index}"]}"
+    selected_essid=${essids["${wifi_index}"]}
+    selected_bssid=${macs["${wifi_index}"]}
+    selected_channel=${channels["${wifi_index}"]}
+}
+
+###########################################
+# Get chipsets of the internet interfaces.
+# Globals:
+#   lan
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+select_internet_interface() {
+    local interfaces_number=`ifconfig 2>&1 | grep 'HWaddr' | wc -l`
+
+    echo -ne '\033c'
+    echo ""
+    echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for internet interfaces${WHITE}..."
+
+    if [ "${interfaces_number}" -ge 1 ]; then
+        get_interfaces_chipsets false
+        echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} internet interface(s)${WHITE}."
+        echo ""
+
+        # Formatting table.
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+        echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipsets                                                ${YELLOW}|"
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+
+        for (( c=0; c<${chipsets_number}; c++ )); do
+            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]:0:55}"
+        done
+
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
+
+
+        echo ""
+
+        # Interface selection part.
+        local interface_selection
+        local is_interface_selected=false
+
+
+        while [[ "${is_interface_selected}" != "true" ]]; do
+            echo -en "\033[1A\033[2K"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of internet interface ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
+
+            read interface_selection
+            if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
+                if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
+                    is_interface_selected=true
+                    lan=${interfaces[$((interface_selection-1))]}
+                fi
+            fi
+        done
+    elif [ "${interfaces_number}" -le 0 ]; then
+        echo ""
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} No internet interfaces ${PURPLE}found${WHITE}."
+        echo ""
+    fi
 }
 
 ###########################################
@@ -327,7 +476,7 @@ select_interface() {
     echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for wireless devices${WHITE}..."
 
     if [ "${interfaces_number}" -ge 1 ] && [ "${interfaces_monitor_mode}" = "" ]; then
-        get_interfaces_chipsets
+        get_interfaces_chipsets true
         echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} wireless device(s)${WHITE}."
         echo ""
 
@@ -336,8 +485,8 @@ select_interface() {
         echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipsets                                                ${YELLOW}|"
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
 
-        for (( c=0; c<${chipsets_number}; c++)); do
-            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]}"
+        for (( c=0; c<${chipsets_number}; c++ )); do
+            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-20s ${YELLOW}|${WHITE} %-55s ${YELLOW}|\n" $((c+1)) "${interfaces[${c}]}" "${chipsets[${c}]:0:55}"
         done
 
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
@@ -352,7 +501,7 @@ select_interface() {
 
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${interfaces_number}${WHITE}]: ${GREEN}"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
 
             read interface_selection
             if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
@@ -367,16 +516,30 @@ select_interface() {
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
         ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
 
-        select_wifi ${wlan}
-
-    elif [ "${interfaces_number}" -le 0 ]; then
-        echo ""
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Is no wireless device to put into ${PURPLE}monitor mode${WHITE}."
-        echo ""
     elif [ "${interfaces_number}" -le 0 ] && [ "${interfaces_monitor_mode}" = "" ]; then
         echo ""
         echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
+    elif [ "${interfaces_number}" -le 0 ]; then
+        echo ""
+        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Some wireless device is put into ${PURPLE}monitor mode${WHITE}."
+        echo ""
     fi
+}
+
+###########################################
+# Open new terminal window.
+# Globals:
+#   None
+# Arguments:
+#   command
+#   title
+# Returns:
+#   None
+###########################################
+open_terminal() {
+    local command=${1}
+    local title=${2}
+    xterm -hold -T "${title}" -e "${command}" > /dev/null 2>&1 &
 }
 
 main() {
@@ -428,6 +591,30 @@ main() {
             case "${menu_selection}" in
                 "1")
                     select_interface
+                    echo "${wlan}"
+                    sleep 1
+                    select_wifi ${wlan}
+                    echo "${selected_essid} ${selected_bssid} ${selected_channel}"
+                    sleep 1
+                    select_internet_interface
+                    echo "${lan}"
+                    # TODO(ugnelis): remove "_TEST".
+                    open_terminal "airbase-ng -e ${selected_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
+                    # open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
+                    sleep 2
+                    echo 12345
+                    iptables -P FORWARD ACCEPT
+                    echo "1" > /proc/sys/net/ipv4/ip_forward
+                    iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
+                    # TODO(ugnelis): provide internet access
+                    # ifconfig at0 up
+                    # ifconfig at0 192.168.3.1 netmask 255.255.255.0
+                    # route add -net 192.168.3.0 netmask 255.255.255.0 gw 192.168.3.1
+                    # TODO(ugnelis): here might be a problem.
+                    iptables -A INPUT -p icmp --icmp-type 8 -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+                    iptables -A INPUT -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -j DROP
+                    open_terminal "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" ${lan} 2>&1 | tee -a ${TMP_DIR}/clts.txt" "DHCP"
+                    sleep 2
                     ;;
                 "2")
                     echo ""
