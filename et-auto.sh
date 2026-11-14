@@ -24,7 +24,7 @@ BOLD_WHITE='\e[1;37m'       # white
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
 # Variables.
-TMP_DIR="./tmp"
+TMP_DIR="$(cd . && pwd)/tmp"
 
 # Real LAN network variables.
 IP_SUBNET=192.168.1.0
