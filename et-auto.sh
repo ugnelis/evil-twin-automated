@@ -633,6 +633,9 @@ main() {
 
             case "${menu_selection}" in
                 "1")
+                    select_interface
+                    select_wifi ${wlan}
+                    select_internet_interface
                     clear
                     print_header
                     echo ""
