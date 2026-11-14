@@ -373,7 +373,7 @@ get_wifi_list() {
             macs["${items_size}"]=${mac}
             channels["${items_size}"]=${channel}
             encryptions["${items_size}"]=${encryption:1}
-            essids["${items_size}"]=${essid:1}
+            essids["${items_size}"]=${essid}
             items_size=$((items_size+1))
         fi
     done  < "${out_file}"
@@ -681,13 +681,21 @@ main() {
                     fi
                     select_wifi ${wlan}
                     [ "${attack_abort}" == true ] && result='main' && continue
+                    if [ -z "${selected_essid}" ]; then
+                        echo ""
+                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No ESSID selected. Please try again.${WHITE}"
+                        sleep 2
+                        result='main'
+                        continue
+                    fi
                     select_internet_interface
                     clear
                     print_header
                     echo ""
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Atheros AR9271 (ID 3) is best for fake AP. Intel 3165 may not support master mode.${WHITE}"
-                    run_background "airbase-ng -e ${selected_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
+                    local escaped_essid=$(printf '%q' "${selected_essid}")
+                    run_background "airbase-ng -e ${escaped_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
                     local at0_timeout=10
