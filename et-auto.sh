@@ -175,48 +175,64 @@ get_interfaces_list() {
 #   None
 ###########################################
 check_programs() {
-    # Check if lspci is installed.
-    is_error=false
+    missing_packages=""
+
     if [ -d /sys/bus/pci ] || [ -d /sys/bus/pci_express ] || [ -d /proc/bus/pci ]; then
         if [ ! -x "$(command -v lspci 2>&1)" ]; then
-            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lspci{GREEN} from your distro's package manager${WHITE}."
-            echo ""
-            is_error=true
+            missing_packages="${missing_packages} pciutils"
         fi
     fi
 
-    # Check if lsusb is installed.
     if [ -d /sys/bus/usb ]; then
         if [ ! -x "$(command -v lsusb 2>&1)" ]; then
-            echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}lsusb${GREEN} from your distro's package manager${WHITE}."
-            echo ""
-            is_error=true
+            missing_packages="${missing_packages} usbutils"
         fi
     fi
 
-    # Check if aircrack-ng is installed.
     if ! [ -x "$(command -v aircrack-ng 2>&1)" ]; then
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}aircrack-ng${GREEN} from your distro's package manager${WHITE}."
-        echo ""
-        is_error=true
+        missing_packages="${missing_packages} aircrack-ng"
     fi
 
-    # Check if xterm is installed.
     if ! [ -x "$(command -v xterm 2>&1)" ]; then
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}xterm${GREEN} from your distro's package manager${WHITE}."
-        echo ""
-        is_error=true
+        missing_packages="${missing_packages} xterm"
     fi
 
-    # Check if isc-dhcp-server is installed.
-    if [[ "$(dpkg-query -l | grep -c isc-dhcp-server)" -eq 0 ]]; then
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Please install ${BOLD_PURPLE}isc-dhcp-server${GREEN} from your distro's package manager${WHITE}."
-        echo ""
-        is_error=true
+    if [[ "$(dpkg-query -l | grep -c isc-dhcp-server 2>/dev/null)" -eq 0 ]]; then
+        missing_packages="${missing_packages} isc-dhcp-server"
     fi
 
-    if [ "${is_error}" == true ]; then
-        exit 1
+    if [ -n "${missing_packages}" ]; then
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Missing packages:${BOLD_YELLOW}${missing_packages}${WHITE}"
+        echo ""
+        echo -e -n "${WHITE}[${CYAN}?${WHITE}]${GREEN} Install them now? ${WHITE}[${GREEN}y${WHITE}/${RED}N${WHITE}]: "
+        read install_answer
+        case "${install_answer}" in
+            [yY]|[yY][eE][sS])
+                if [ -x "$(command -v apt-get 2>&1)" ]; then
+                    apt-get install -y ${missing_packages}
+                elif [ -x "$(command -v dnf 2>&1)" ]; then
+                    dnf install -y ${missing_packages}
+                elif [ -x "$(command -v yum 2>&1)" ]; then
+                    yum install -y ${missing_packages}
+                elif [ -x "$(command -v pacman 2>&1)" ]; then
+                    pacman -S --noconfirm ${missing_packages}
+                elif [ -x "$(command -v zypper 2>&1)" ]; then
+                    zypper install -y ${missing_packages}
+                else
+                    echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No supported package manager found. Install manually:${WHITE}"
+                    echo -e "${BOLD_YELLOW}    ${missing_packages}${WHITE}"
+                    exit 1
+                fi
+                if [ $? -ne 0 ]; then
+                    echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Installation failed.${WHITE}"
+                    exit 1
+                fi
+                ;;
+            *)
+                echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Aborting. Install manually:${BOLD_YELLOW}${missing_packages}${WHITE}"
+                exit 1
+                ;;
+        esac
     fi
 }
 
