@@ -230,7 +230,7 @@ check_programs() {
                 echo ""
                 echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Packages installed successfully!${WHITE}"
                 sleep 1
-                echo -ne '\033c'
+                packages_installed=true
                 ;;
             *)
                 echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Aborting. Install manually:${BOLD_YELLOW}${missing_packages}${WHITE}"
@@ -594,6 +594,12 @@ main() {
             echo ""
         else
             check_programs
+
+            if [ "${packages_installed}" == true ]; then
+                unset packages_installed
+                result='main'
+                continue
+            fi
 
             echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
             echo -e "${WHITE}     | ${YELLOW} ID ${WHITE} |                            ${BOLD_PURPLE}Name${WHITE}                           |"
