@@ -321,6 +321,7 @@ create_dhcpd_config_file() {
         echo -e "\trange ${AP_RANGE_START} ${AP_RANGE_END};"
         echo -e "}"
     } > "${file_path}"
+    chmod 644 "${file_path}"
 }
 
 ###########################################
@@ -373,6 +374,7 @@ get_wifi_list() {
         mac_lenght=${#mac}
         if [ "${mac_lenght}" -ge 17 ]; then
             macs["${items_size}"]=${mac}
+            channel="${channel## }"
             channels["${items_size}"]=${channel}
             encryptions["${items_size}"]=${encryption# }
             while [[ "${essid}" == " "* ]]; do essid="${essid# }"; done
