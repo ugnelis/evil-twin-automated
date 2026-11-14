@@ -761,7 +761,9 @@ main() {
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Internet access: ${BOLD_RED}Disabled${WHITE}"
                     fi
-                    sleep 2
+                    echo ""
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Press ${BOLD_YELLOW}Enter${GREEN} to stop the attack and clean up.${WHITE}"
+                    read
                     ;;
                 "2")
                     echo ""
