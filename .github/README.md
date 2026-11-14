@@ -14,4 +14,4 @@ Automated Evil Twin attack. Currently in progress.
 
 ## TODO
 * ~~Provide the internet access to an access point.~~
-* Show a custom html webpage when is connected to the fake access point.
+* ~~Captive portal: fake login page that logs passwords.~~
