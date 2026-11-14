@@ -162,6 +162,11 @@ get_interfaces_list() {
         fi
     else
         for interface in $(ls -1 /sys/class/net); do
+            case "${interface}" in
+                lo|veth*|tailscale0)
+                    continue
+                    ;;
+            esac
             if [ -f /sys/class/net/${interface}/uevent ]; then
                 if (( $(grep -c DEVTYPE=bridge /sys/class/net/${interface}/uevent) == 0 )); then
                     interface_list="${interface_list}\n ${interface}"
@@ -466,10 +471,17 @@ select_internet_interface() {
 
     if [ "${interfaces_number}" -ge 1 ]; then
         get_interfaces_chipsets false
+
+        if [ "${chipsets_number}" -eq 0 ]; then
+            echo ""
+            echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No internet interfaces found.${WHITE}"
+            echo ""
+            return
+        fi
+
         echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} internet interface(s)${WHITE}."
         echo ""
 
-        # Formatting table.
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
         echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipsets                                                ${YELLOW}|"
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
@@ -480,13 +492,10 @@ select_internet_interface() {
 
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
 
-
         echo ""
 
-        # Interface selection part.
         local interface_selection
         local is_interface_selected=false
-
 
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
@@ -500,9 +509,9 @@ select_internet_interface() {
                 fi
             fi
         done
-    elif [ "${interfaces_number}" -le 0 ]; then
+    else
         echo ""
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} No internet interfaces ${PURPLE}found${WHITE}."
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No internet interfaces found.${WHITE}"
         echo ""
     fi
 }
