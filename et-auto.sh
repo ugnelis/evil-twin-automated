@@ -227,6 +227,10 @@ check_programs() {
                     echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Installation failed.${WHITE}"
                     exit 1
                 fi
+                echo ""
+                echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Packages installed successfully!${WHITE}"
+                sleep 1
+                echo -ne '\033c'
                 ;;
             *)
                 echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Aborting. Install manually:${BOLD_YELLOW}${missing_packages}${WHITE}"
