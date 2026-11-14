@@ -694,8 +694,7 @@ main() {
                     echo ""
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Atheros AR9271 (ID 3) is best for fake AP. Intel 3165 may not support master mode.${WHITE}"
-                    local escaped_essid=$(printf '%q' "${selected_essid}")
-                    run_background "airbase-ng -e ${escaped_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
+                    run_background "airbase-ng -e '${selected_essid}' -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
                     local at0_timeout=10
