@@ -387,6 +387,7 @@ select_wifi() {
     unset selected_channel
 
     echo -ne '\033c'
+    print_header
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
     echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC  ${YELLOW}|"
     echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
@@ -432,6 +433,7 @@ select_internet_interface() {
     local interfaces_number=`ifconfig 2>&1 | grep 'HWaddr' | wc -l`
 
     echo -ne '\033c'
+    print_header
     echo ""
     echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for internet interfaces${WHITE}..."
 
@@ -492,6 +494,7 @@ select_interface() {
     local interfaces_monitor_mode=`iwconfig 2>&1 | grep 'Mode:Monitor'`
 
     echo -ne '\033c'
+    print_header
     echo ""
     echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for wireless devices${WHITE}..."
 
@@ -562,6 +565,21 @@ open_terminal() {
     xterm -hold -T "${title}" -e "${command}" > /dev/null 2>&1 &
 }
 
+print_header() {
+    echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+"
+    echo -e ${YELLOW}   "    |                                                                  |"
+    echo -e "     |${RED}    ███████╗████████╗    ${GREEN}█████╗ ██╗   ██╗████████╗ ██████╗ ${PURPLE}██╗   ${YELLOW} |"
+    echo -e "     |${RED}    ██╔════╝╚══██╔══╝   ${GREEN}██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗${PURPLE}██║   ${YELLOW} |"
+    echo -e "     |${BOLD_RED}    █████╗     ██║${WHITE}█████╗${BOLD_GREEN}███████║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}██║   ${YELLOW} |"
+    echo -e "     |${BOLD_RED}    ██╔══╝     ██║${WHITE}╚════╝${BOLD_GREEN}██╔══██║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}╚═╝   ${YELLOW} |"
+    echo -e "     |${RED}    ███████╗   ██║      ${GREEN}██║  ██║╚██████╔╝   ██║   ╚██████╔╝${PURPLE}██╗   ${YELLOW} |"
+    echo -e "     |${RED}    ╚══════╝   ╚═╝      ${GREEN}╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ${PURPLE}╚═╝   ${YELLOW} |"
+    echo -e ${YELLOW}   "    |                                                                  |"
+    echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+${YELLOW}"
+    echo -e "                        |${BOLD_RED} Evil${BOLD_YELLOW} Twin${BOLD_PURPLE} Automated${BOLD_GREEN} Attack${YELLOW} |"
+    echo -e "                        ${CYAN}+${YELLOW}----------------------------${CYAN}+"
+}
+
 main() {
     local result='main'
     while [ "${result}" == 'main' ];
@@ -569,18 +587,7 @@ main() {
         result=none
 
         echo -ne '\033c'
-        echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+"
-        echo -e ${YELLOW}   "    |                                                                  |"
-        echo -e "     |${RED}    ███████╗████████╗    ${GREEN}█████╗ ██╗   ██╗████████╗ ██████╗ ${PURPLE}██╗   ${YELLOW} |"
-        echo -e "     |${RED}    ██╔════╝╚══██╔══╝   ${GREEN}██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗${PURPLE}██║   ${YELLOW} |"
-        echo -e "     |${BOLD_RED}    █████╗     ██║${WHITE}█████╗${BOLD_GREEN}███████║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}██║   ${YELLOW} |"
-        echo -e "     |${BOLD_RED}    ██╔══╝     ██║${WHITE}╚════╝${BOLD_GREEN}██╔══██║██║   ██║   ██║   ██║   ██║${BOLD_PURPLE}╚═╝   ${YELLOW} |"
-        echo -e "     |${RED}    ███████╗   ██║      ${GREEN}██║  ██║╚██████╔╝   ██║   ╚██████╔╝${PURPLE}██╗   ${YELLOW} |"
-        echo -e "     |${RED}    ╚══════╝   ╚═╝      ${GREEN}╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ${PURPLE}╚═╝   ${YELLOW} |"
-        echo -e ${YELLOW}   "    |                                                                  |"
-        echo -e ${CYAN}   "    +${YELLOW}------------------------------------------------------------------${CYAN}+${YELLOW}"
-        echo -e "                        |${BOLD_RED} Evil${BOLD_YELLOW} Twin${BOLD_PURPLE} Automated${BOLD_GREEN} Attack${YELLOW} |"
-        echo -e "                        ${CYAN}+${YELLOW}----------------------------${CYAN}+"
+        print_header
 
         local user_name=`whoami`
         if [ "${user_name}" != "root" ]; then
