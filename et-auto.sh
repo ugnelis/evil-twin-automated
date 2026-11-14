@@ -696,7 +696,6 @@ main() {
                     print_header
                     echo ""
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Broadcasting ESSID: '${BOLD_YELLOW}${selected_essid}${WHITE}'"
                     run_background "airbase-ng -e '${selected_essid}' -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
