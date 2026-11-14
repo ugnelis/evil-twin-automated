@@ -163,7 +163,7 @@ get_interfaces_list() {
     else
         for interface in $(ls -1 /sys/class/net); do
             case "${interface}" in
-                lo|veth*|tailscale0)
+                lo|veth*|tailscale0|at*)
                     continue
                     ;;
             esac
@@ -345,6 +345,8 @@ get_wifi_list() {
     trap - SIGINT SIGQUIT SIGTSTP
 
     airodump-ng -w "${capture_dir}/capture" --output-format csv -a "${wlan}"
+
+    trap cleanup EXIT INT TERM
 
     local csv_file="${capture_dir}/capture-01.csv"
     local out_file="${capture_dir}/capture-02.csv"
@@ -630,7 +632,21 @@ print_header() {
     echo -e "                        ${CYAN}+${YELLOW}----------------------------${CYAN}+"
 }
 
+cleanup() {
+    echo ""
+    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Cleaning up...${WHITE}"
+    pkill -f "airbase-ng" 2>/dev/null || true
+    pkill -f "dhcpd" 2>/dev/null || true
+    for iface in $(ip -o link show | grep -o 'at[0-9]*'); do
+        ip link set "${iface}" down 2>/dev/null || true
+        iw dev "${iface}" del 2>/dev/null || true
+    done
+    iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
+    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Done.${WHITE}"
+}
+
 main() {
+    trap cleanup EXIT INT TERM
     local result='main'
     while [ "${result}" == 'main' ];
     do
