@@ -24,7 +24,7 @@ BOLD_WHITE='\e[1;37m'       # white
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
 # Variables.
-TMP_DIR="./tmp/"
+TMP_DIR="./tmp"
 
 # Real LAN network variables.
 IP_SUBNET=192.168.1.0
@@ -345,9 +345,13 @@ get_wifi_list() {
     trap - SIGINT SIGQUIT SIGTSTP
 
     airodump-ng -w ${capture_dir}/capture/capture --output-format csv -a ${wlan}
-    take_needed=`cat ${capture_dir}/capture/capture-01.csv | egrep -a -n '(Station|CLIENT)' | awk -F : '{print $1}'`
-    take_needed=`expr ${take_needed} - 1`
-    head -n ${take_needed} ${capture_dir}/capture/capture-01.csv &> ${capture_dir}/capture/capture-02.csv
+    take_needed=$(grep -a -n 'Station\|CLIENT' "${capture_dir}/capture/capture-01.csv" | awk -F : '{print $1}')
+    take_needed=$((take_needed - 1))
+    if [ "${take_needed}" -le 0 ]; then
+        cp "${capture_dir}/capture/capture-01.csv" "${capture_dir}/capture/capture-02.csv"
+    else
+        head -n ${take_needed} "${capture_dir}/capture/capture-01.csv" &> "${capture_dir}/capture/capture-02.csv"
+    fi
 
     local mac
     local fts
@@ -629,7 +633,7 @@ main() {
 
             local menu_selection
             read menu_selection
-            menu_selection=`expr ${menu_selection} + 0 2> /dev/null`
+            menu_selection=$((menu_selection + 0))
 
             case "${menu_selection}" in
                 "1")
