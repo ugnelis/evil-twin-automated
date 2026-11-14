@@ -372,7 +372,8 @@ get_wifi_list() {
         if [ "${mac_lenght}" -ge 17 ]; then
             macs["${items_size}"]=${mac}
             channels["${items_size}"]=${channel}
-            encryptions["${items_size}"]=${encryption:1}
+            encryptions["${items_size}"]=${encryption# }
+            essid="${essid# }"
             essids["${items_size}"]=${essid}
             items_size=$((items_size+1))
         fi
