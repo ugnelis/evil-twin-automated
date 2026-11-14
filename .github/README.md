@@ -13,5 +13,5 @@ Automated Evil Twin attack. Currently in progress.
 * [aircrack-ng](https://www.aircrack-ng.org/doku.php?id=downloads#downloads)
 
 ## TODO
-* Provide the internet access to an access point.
+* ~~Provide the internet access to an access point.~~
 * Show a custom html webpage when is connected to the fake access point.
