@@ -333,41 +333,33 @@ create_dhcpd_config_file() {
 ###########################################
 get_wifi_list() {
     wlan=${1}
-    local capture_dir=${TMP_DIR}
+    local capture_dir="${TMP_DIR}/capture"
 
-    check_dir=`ls ${capture_dir} | grep -E '^capture$'`
-    if [ "${check_dir}" != "" ];then
-        rm -rf ${capture_dir}/capture
-        mkdir -p ${capture_dir}/capture
-    else
-        mkdir -p ${capture_dir}/capture
-    fi
+    rm -rf "${capture_dir}"
+    mkdir -p "${capture_dir}"
     trap - SIGINT SIGQUIT SIGTSTP
 
-    airodump-ng -w ${capture_dir}/capture/capture --output-format csv -a ${wlan}
-    take_needed=$(grep -a -n 'Station\|CLIENT' "${capture_dir}/capture/capture-01.csv" | awk -F : '{print $1}')
-    take_needed=$((take_needed - 1))
-    if [ "${take_needed}" -le 0 ]; then
-        cp "${capture_dir}/capture/capture-01.csv" "${capture_dir}/capture/capture-02.csv"
-    else
-        head -n ${take_needed} "${capture_dir}/capture/capture-01.csv" &> "${capture_dir}/capture/capture-02.csv"
+    airodump-ng -w "${capture_dir}/capture" --output-format csv -a "${wlan}"
+
+    local csv_file="${capture_dir}/capture-01.csv"
+    local out_file="${capture_dir}/capture-02.csv"
+
+    if [ ! -f "${csv_file}" ]; then
+        items_size=0
+        return
     fi
 
-    local mac
-    local fts
-    local lts
-    local channel
-    local speed
-    local encryption
-    local cypher
-    local auth
-    local power
-    local beacon
-    local iv
-    local lan_ip
-    local id_length
-    local essid
-    local key
+    local take_needed
+    take_needed=$(grep -a -n 'Station\|CLIENT' "${csv_file}" | awk -F : '{print $1}')
+    take_needed=$((take_needed - 1))
+
+    if [ "${take_needed}" -le 0 ]; then
+        cp "${csv_file}" "${out_file}"
+    else
+        head -n "${take_needed}" "${csv_file}" > "${out_file}" 2>&1
+    fi
+
+    local mac fts lts channel speed encryption cypher auth power beacon iv lan_ip id_length essid key
 
     items_size=0
     while IFS=',' read mac fts lts channel speed encryption cypher auth power beacon iv lan_ip id_length essid key; do
@@ -379,7 +371,7 @@ get_wifi_list() {
             essids["${items_size}"]=${essid:1}
             items_size=$((items_size+1))
         fi
-    done  < ${capture_dir}/capture/capture-02.csv
+    done  < "${out_file}"
 }
 
 ###########################################
@@ -395,43 +387,64 @@ get_wifi_list() {
 ###########################################
 select_wifi() {
     local wlan=${1}
-    get_wifi_list ${wlan}
-    unset selected_essid
-    unset selected_bssid
-    unset selected_channel
 
-    echo -ne '\033c'
-    print_header
-    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
-    echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC  ${YELLOW}|"
-    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
+    while true; do
+        get_wifi_list ${wlan}
+        unset selected_essid
+        unset selected_bssid
+        unset selected_channel
 
-    for (( c=0; c<${items_size}; c++ )); do
-        printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-35s ${YELLOW}|${WHITE} %-17s ${YELLOW}|${WHITE} %-3d ${YELLOW}|${WHITE} %-4s ${YELLOW}|\n" $((c+1)) "${essids[${c}]}" "${macs[${c}]}" ${channels[${c}]} "${encryptions[${c}]}"
-    done
+        echo -ne '\033c'
+        print_header
 
-    echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
-
-    # Wi-Fi selection part.
-    local wifi_selection
-    local is_wifi_selected=false
-
-    while [[ "${is_wifi_selected}" != "true" ]]; do
-        echo ""
-        echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${items_size}${WHITE}]: ${GREEN}"
-
-        read wifi_selection
-        if [[ "${wifi_selection}" =~ ^[+-]?[0-9]+$ ]]; then
-            if [ "${wifi_selection}" -ge 1 ] && [ "${wifi_selection}" -le "${items_size}" ]; then
-                is_wifi_selected=true
-                wifi_index=$((wifi_selection-1))
-            fi
+        if [ "${items_size}" -eq 0 ]; then
+            echo ""
+            echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No networks found.${WHITE}"
+            echo ""
+            echo -e -n "${WHITE}[${CYAN}?${WHITE}]${GREEN} ${BOLD_YELLOW}[r]${GREEN}escan ${WHITE}| ${BOLD_YELLOW}[b]${GREEN}ack ${WHITE}: "
+            read choice
+            case "${choice}" in
+                [rR])
+                    continue
+                    ;;
+                *)
+                    attack_abort=true
+                    return
+                    ;;
+            esac
         fi
-    done
 
-    selected_essid=${essids["${wifi_index}"]}
-    selected_bssid=${macs["${wifi_index}"]}
-    selected_channel=${channels["${wifi_index}"]}
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
+        echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} BSSID                               ${YELLOW}|${RED} ESSID             ${YELLOW}|${RED} CH  ${YELLOW}|${RED} ENC  ${YELLOW}|"
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
+
+        for (( c=0; c<${items_size}; c++ )); do
+            printf "${YELLOW}|${WHITE} %2d ${YELLOW}|${WHITE} %-35s ${YELLOW}|${WHITE} %-17s ${YELLOW}|${WHITE} %-3d ${YELLOW}|${WHITE} %-4s ${YELLOW}|\n" $((c+1)) "${essids[${c}]}" "${macs[${c}]}" ${channels[${c}]} "${encryptions[${c}]}"
+        done
+
+        echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
+
+        local wifi_selection
+        local is_wifi_selected=false
+
+        while [[ "${is_wifi_selected}" != "true" ]]; do
+            echo ""
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${items_size}${WHITE}]: ${GREEN}"
+
+            read wifi_selection
+            if [[ "${wifi_selection}" =~ ^[+-]?[0-9]+$ ]]; then
+                if [ "${wifi_selection}" -ge 1 ] && [ "${wifi_selection}" -le "${items_size}" ]; then
+                    is_wifi_selected=true
+                    wifi_index=$((wifi_selection-1))
+                fi
+            fi
+        done
+
+        selected_essid=${essids["${wifi_index}"]}
+        selected_bssid=${macs["${wifi_index}"]}
+        selected_channel=${channels["${wifi_index}"]}
+        break
+    done
 }
 
 ###########################################
@@ -637,8 +650,11 @@ main() {
 
             case "${menu_selection}" in
                 "1")
+                    unset attack_abort
                     select_interface
+                    [ -z "${wlan}" ] && result='main' && continue
                     select_wifi ${wlan}
+                    [ "${attack_abort}" == true ] && result='main' && continue
                     select_internet_interface
                     clear
                     print_header
