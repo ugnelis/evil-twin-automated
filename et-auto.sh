@@ -373,7 +373,8 @@ get_wifi_list() {
             macs["${items_size}"]=${mac}
             channels["${items_size}"]=${channel}
             encryptions["${items_size}"]=${encryption# }
-            essid="${essid# }"
+            while [[ "${essid}" == " "* ]]; do essid="${essid# }"; done
+            essid="${essid%$'\r'}"
             essids["${items_size}"]=${essid}
             items_size=$((items_size+1))
         fi
@@ -606,10 +607,11 @@ run_background() {
     local command=${1}
     local log_file="${TMP_DIR}/${2}.log"
     mkdir -p "${TMP_DIR}"
+    echo "[$(date)] Running: ${command}" > "${log_file}"
     if [ -x "$(command -v xterm)" ] && [ -n "${DISPLAY:-}" ]; then
-        xterm -hold -T "${2}" -e "${command}" > "${log_file}" 2>&1 &
+        xterm -hold -T "${2}" -e "${command}" >> "${log_file}" 2>&1 &
     else
-        nohup bash -c "${command}" > "${log_file}" 2>&1 &
+        nohup bash -c "${command}" >> "${log_file}" 2>&1 &
     fi
 }
 
@@ -694,7 +696,7 @@ main() {
                     print_header
                     echo ""
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Atheros AR9271 (ID 3) is best for fake AP. Intel 3165 may not support master mode.${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Broadcasting ESSID: '${BOLD_YELLOW}${selected_essid}${WHITE}'"
                     run_background "airbase-ng -e '${selected_essid}' -a ${selected_bssid} -c ${selected_channel} ${wlan}" "airbase-ng"
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
