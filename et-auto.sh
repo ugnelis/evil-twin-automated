@@ -525,12 +525,19 @@ select_interface() {
     echo ""
     echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Scanning for wireless devices${WHITE}..."
 
-    if [ "${interfaces_number}" -ge 1 ] && [ "${interfaces_monitor_mode}" = "" ]; then
+    if [ "${interfaces_number}" -ge 1 ]; then
         get_interfaces_chipsets true
+
+        if [ "${chipsets_number}" -eq 0 ]; then
+            echo ""
+            echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No wireless interface found. Check your adapter.${WHITE}"
+            echo ""
+            return
+        fi
+
         echo -e ${WHITE}"[${RED}+${WHITE}]${GREEN} Found ${BOLD_PURPLE}${chipsets_number}${GREEN} wireless device(s)${WHITE}."
         echo ""
 
-        # Formatting table.
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
         echo -e "${YELLOW}|${RED} ID ${YELLOW}|${RED} Interfaces           ${YELLOW}|${RED} Chipsets                                                ${YELLOW}|"
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
@@ -541,13 +548,10 @@ select_interface() {
 
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}----------------------${WHITE}+${YELLOW}---------------------------------------------------------${WHITE}+"
 
-
         echo ""
 
-        # Interface selection part.
         local interface_selection
         local is_interface_selected=false
-
 
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
@@ -562,17 +566,18 @@ select_interface() {
             fi
         done
 
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Enabling monitor mode on ${BOLD_PURPLE}$wlan${WHITE}."
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Enabling monitor mode on ${BOLD_PURPLE}${wlan}${WHITE}."
         ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
 
-    elif [ "${interfaces_number}" -le 0 ] && [ "${interfaces_monitor_mode}" = "" ]; then
-        echo ""
-        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
-        echo ""
-    elif [ "${interfaces_number}" -le 0 ] && [ -n "${interfaces_monitor_mode}" ]; then
+    elif [ -n "${interfaces_monitor_mode}" ]; then
         wlan=$(echo "${interfaces_monitor_mode}" | awk '{print $1}')
+        echo ""
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Interface ${BOLD_PURPLE}${wlan}${GREEN} is already in ${PURPLE}monitor mode${GREEN}. Using it.${WHITE}"
+        echo ""
+    else
+        echo ""
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}. Check your adapter.${WHITE}"
         echo ""
     fi
 }
