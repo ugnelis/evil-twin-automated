@@ -568,10 +568,11 @@ select_interface() {
 
     elif [ "${interfaces_number}" -le 0 ] && [ "${interfaces_monitor_mode}" = "" ]; then
         echo ""
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
-    elif [ "${interfaces_number}" -le 0 ]; then
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Wireless Card is ${RED}not found${WHITE}."
         echo ""
-        echo -e ${WHITE}"[${RED}!${WHITE}]${GREEN} Some wireless device is put into ${PURPLE}monitor mode${WHITE}."
+    elif [ "${interfaces_number}" -le 0 ] && [ -n "${interfaces_monitor_mode}" ]; then
+        wlan=$(echo "${interfaces_monitor_mode}" | awk '{print $1}')
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Interface ${BOLD_PURPLE}${wlan}${GREEN} is already in ${PURPLE}monitor mode${GREEN}. Using it.${WHITE}"
         echo ""
     fi
 }
@@ -652,7 +653,13 @@ main() {
                 "1")
                     unset attack_abort
                     select_interface
-                    [ -z "${wlan}" ] && result='main' && continue
+                    if [ -z "${wlan}" ]; then
+                        echo ""
+                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No wireless interface available. Check your adapter.${WHITE}"
+                        sleep 2
+                        result='main'
+                        continue
+                    fi
                     select_wifi ${wlan}
                     [ "${attack_abort}" == true ] && result='main' && continue
                     select_internet_interface
