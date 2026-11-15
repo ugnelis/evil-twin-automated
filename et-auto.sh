@@ -481,7 +481,7 @@ select_wifi() {
 
         while [[ "${is_wifi_selected}" != "true" ]]; do
             echo ""
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${Green}${items_size}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${items_size}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
 
             read wifi_selection
             case "${wifi_selection}" in
@@ -551,7 +551,7 @@ select_internet_interface() {
 
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of internet interface ${WHITE}[${GREEN}1${WHITE}-${Green}${chipsets_number}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of internet interface ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
 
             read interface_selection
             case "${interface_selection}" in
@@ -621,7 +621,7 @@ select_interface() {
 
          while [[ "${is_interface_selected}" != "true" ]]; do
              echo -en "\033[1A\033[2K"
-             echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${Green}${chipsets_number}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
+             echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
 
              read interface_selection
              case "${interface_selection}" in
