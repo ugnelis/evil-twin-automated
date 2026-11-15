@@ -1152,6 +1152,9 @@ HCONF
                                 echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables NAT (PREROUTING):${WHITE}"
                                 iptables -t nat -L PREROUTING -n -v 2>/dev/null
                                 echo ""
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables NAT (POSTROUTING):${WHITE}"
+                                iptables -t nat -L POSTROUTING -n -v 2>/dev/null
+                                echo ""
                                 echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables INPUT:${WHITE}"
                                 iptables -L INPUT -n -v 2>/dev/null
                                 echo ""
