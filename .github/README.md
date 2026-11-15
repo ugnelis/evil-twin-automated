@@ -11,6 +11,7 @@ Automated Evil Twin attack. Currently in progress.
 * [xterm](https://packages.debian.org/sid/xterm)
 * [isc-dhcp-server](https://packages.debian.org/sid/isc-dhcp-server)
 * [aircrack-ng](https://www.aircrack-ng.org/doku.php?id=downloads#downloads)
+* [hostapd](https://packages.debian.org/sid/hostapd)
 
 ## TODO
 * ~~Provide the internet access to an access point.~~

