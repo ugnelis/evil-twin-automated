@@ -926,6 +926,7 @@ cleanup() {
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 443 -j REDIRECT --to-port 443 2>/dev/null || true
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || true
+    iptables -D INPUT -i "${ap_iface}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${ap_iface}" -o "${lan}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${lan}" -o "${ap_iface}" -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
@@ -1131,6 +1132,7 @@ HCONF
                                     iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 80 -j REDIRECT --to-port 80
                                     iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 443 -j REDIRECT --to-port 443
                                     iptables -t nat -A PREROUTING -i "${wlan}" -p udp --dport 53 -j REDIRECT --to-port 53
+                                    iptables -I INPUT 1 -i "${wlan}" -j ACCEPT
 
                                     run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log" "dns_server"
                                     run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80 ${wlan}" "captive_portal"
@@ -1144,6 +1146,9 @@ HCONF
                             s|S)
                                 echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables NAT (PREROUTING):${WHITE}"
                                 iptables -t nat -L PREROUTING -n -v 2>/dev/null
+                                echo ""
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables INPUT:${WHITE}"
+                                iptables -L INPUT -n -v 2>/dev/null
                                 echo ""
                                 echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables FORWARD:${WHITE}"
                                 iptables -L FORWARD -n -v 2>/dev/null
