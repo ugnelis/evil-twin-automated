@@ -915,6 +915,11 @@ AUTHED = False
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if AUTHED:
+            if "generate_204" in self.path:
+                self.send_response(204)
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.end_headers()
+                return
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -1116,6 +1121,7 @@ start_portal() {
     iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 80 -j REDIRECT --to-port 80
     iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 443 -j REDIRECT --to-port 443
     iptables -t nat -A PREROUTING -i "${wlan}" -p udp --dport 53 -j REDIRECT --to-port 53
+    iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 853 -j REDIRECT --to-port 9
     iptables -I INPUT 1 -i "${wlan}" -j ACCEPT
 
     run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log ${DNS}" "dns_server"
@@ -1232,6 +1238,7 @@ cleanup() {
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 443 -j REDIRECT --to-port 443 2>/dev/null || true
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || true
+    iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 853 -j REDIRECT --to-port 9 2>/dev/null || true
     iptables -D INPUT -i "${ap_iface}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${ap_iface}" -o "${lan}" -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -i "${lan}" -o "${ap_iface}" -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
