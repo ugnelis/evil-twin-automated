@@ -969,13 +969,16 @@ cleanup() {
         cat "${TMP_DIR}/passwords.txt"
         echo ""
     fi
-    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Logs and passwords kept in ${BOLD_CYAN}${TMP_DIR}${WHITE}"
+    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Session saved: ${BOLD_CYAN}${TMP_DIR}${WHITE}"
+    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} All sessions kept in ${BOLD_CYAN}${SCRIPT_DIR}/tmp${GREEN}, latest via ${BOLD_CYAN}${SCRIPT_DIR}/tmp/latest${WHITE}"
 }
 
 main() {
     if [ "$(whoami)" == "root" ]; then
-        rm -rf "${TMP_DIR}"
+        mkdir -p "${SCRIPT_DIR}/tmp"
+        TMP_DIR="${SCRIPT_DIR}/tmp/session-$(date +%Y%m%d-%H%M%S)"
         mkdir -p "${TMP_DIR}"
+        ln -sfn "${TMP_DIR}" "${SCRIPT_DIR}/tmp/latest"
     fi
     trap cleanup EXIT INT TERM
     local result='main'
