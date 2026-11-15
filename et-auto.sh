@@ -1050,7 +1050,7 @@ main() {
                     fi
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check: ${BOLD_CYAN}${TMP_DIR}/{airbase-ng,dhcpd,aireplay-ng}.log${GREEN}, passwords: ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                     echo ""
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[s]${GREEN}tatus ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
                     deauth_running=false
                     portal_running=false
                     while true; do
@@ -1085,6 +1085,28 @@ main() {
                                 else
                                     echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Captive portal already running.${WHITE}"
                                 fi
+                                ;;
+                            s|S)
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables NAT (PREROUTING):${WHITE}"
+                                iptables -t nat -L PREROUTING -n -v 2>/dev/null
+                                echo ""
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} iptables FORWARD:${WHITE}"
+                                iptables -L FORWARD -n -v 2>/dev/null
+                                echo ""
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} DHCP clients:${WHITE}"
+                                awk '/^lease /{ip=$2} /hardware ethernet/{mac=$3; gsub(/;/,"",mac)} /client-hostname/{host=$2; gsub(/[;"]+/,"",host)} /^}/{if(mac!="") print "  " mac "  " ip "  " host; mac=""; ip=""; host=""}' "${DHCPD_LEASES}" 2>/dev/null
+                                echo ""
+                                if [ "${portal_running}" == true ]; then
+                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal: ${BOLD_YELLOW}running${WHITE}"
+                                else
+                                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Captive portal: stopped${WHITE}"
+                                fi
+                                if [ "${deauth_running}" == true ]; then
+                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Deauth: ${BOLD_YELLOW}running${WHITE}"
+                                else
+                                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Deauth: stopped${WHITE}"
+                                fi
+                                echo ""
                                 ;;
                             q|Q)
                                 break
