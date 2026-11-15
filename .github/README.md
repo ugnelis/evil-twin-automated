@@ -1,5 +1,5 @@
 # evil-twin-automated
-Automated Evil Twin attack. Currently in progress.
+Automated Evil Twin attack with captive portal, victim traffic monitoring and session logging.
 
 # Screenshot
 ![Screenshot](screenshot.png)
@@ -12,7 +12,4 @@ Automated Evil Twin attack. Currently in progress.
 * [isc-dhcp-server](https://packages.debian.org/sid/isc-dhcp-server)
 * [aircrack-ng](https://www.aircrack-ng.org/doku.php?id=downloads#downloads)
 * [hostapd](https://packages.debian.org/sid/hostapd)
-
-## TODO
-* ~~Provide the internet access to an access point.~~
-* ~~Captive portal: fake login page that logs passwords.~~
+* [tcpdump](https://packages.debian.org/sid/tcpdump)

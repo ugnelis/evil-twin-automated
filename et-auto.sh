@@ -358,6 +358,22 @@ create_dhcpd_config_file() {
 # Returns:
 #   None
 ###########################################
+# Quit from anywhere with a clean teardown.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+###########################################
+quit_now() {
+    echo ""
+    echo -e "${WHITE}     [${GREEN} ok ${WHITE}]${WHITE} See ${BOLD_YELLOW}you${WHITE} next time!"
+    echo ""
+    exit 0
+}
+
+###########################################
 get_wifi_list() {
     wlan=${1}
     local capture_dir="${TMP_DIR}/capture"
@@ -368,7 +384,8 @@ get_wifi_list() {
 
     airodump-ng -w "${capture_dir}/capture" --output-format csv -a "${wlan}"
 
-    trap cleanup EXIT INT TERM
+    trap cleanup EXIT
+    trap 'exit 130' INT TERM
 
     local csv_file="${capture_dir}/capture-01.csv"
     local out_file="${capture_dir}/capture-02.csv"
@@ -433,17 +450,20 @@ select_wifi() {
             echo ""
             echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No networks found.${WHITE}"
             echo ""
-            echo -e -n "${WHITE}[${CYAN}?${WHITE}]${GREEN} ${BOLD_YELLOW}[r]${GREEN}escan ${WHITE}| ${BOLD_YELLOW}[b]${GREEN}ack ${WHITE}: "
-            read choice
-            case "${choice}" in
-                [rR])
-                    continue
-                    ;;
-                *)
-                    attack_abort=true
-                    return
-                    ;;
-            esac
+                echo -e -n "${WHITE}[${CYAN}?${WHITE}]${GREEN} ${BOLD_YELLOW}[r]${GREEN}escan ${WHITE}| ${BOLD_YELLOW}[b]${GREEN}ack ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit ${WHITE}: "
+                read choice
+                case "${choice}" in
+                    [rR])
+                        continue
+                        ;;
+                    [qQ])
+                        quit_now
+                        ;;
+                    *)
+                        attack_abort=true
+                        return
+                        ;;
+                esac
         fi
 
         echo -e "${WHITE}+${YELLOW}----${WHITE}+${YELLOW}-------------------------------------${WHITE}+${YELLOW}-------------------${WHITE}+${YELLOW}-----${WHITE}+${YELLOW}------${WHITE}+"
@@ -461,9 +481,14 @@ select_wifi() {
 
         while [[ "${is_wifi_selected}" != "true" ]]; do
             echo ""
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${items_size}${WHITE}]: ${GREEN}"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${Green}${items_size}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
 
             read wifi_selection
+            case "${wifi_selection}" in
+                q|Q)
+                    quit_now
+                    ;;
+            esac
             if [[ "${wifi_selection}" =~ ^[+-]?[0-9]+$ ]]; then
                 if [ "${wifi_selection}" -ge 1 ] && [ "${wifi_selection}" -le "${items_size}" ]; then
                     is_wifi_selected=true
@@ -526,9 +551,14 @@ select_internet_interface() {
 
         while [[ "${is_interface_selected}" != "true" ]]; do
             echo -en "\033[1A\033[2K"
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of internet interface ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
+            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of internet interface ${WHITE}[${GREEN}1${WHITE}-${Green}${chipsets_number}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
 
             read interface_selection
+            case "${interface_selection}" in
+                q|Q)
+                    quit_now
+                    ;;
+            esac
             if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
                 if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
                     is_interface_selected=true
@@ -589,18 +619,23 @@ select_interface() {
         local interface_selection
         local is_interface_selected=false
 
-        while [[ "${is_interface_selected}" != "true" ]]; do
-            echo -en "\033[1A\033[2K"
-            echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${GREEN}${chipsets_number}${WHITE}]: ${GREEN}"
+         while [[ "${is_interface_selected}" != "true" ]]; do
+             echo -en "\033[1A\033[2K"
+             echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Select the ${BOLD_RED}number${WHITE} of wireless device ${WHITE}[${GREEN}1${WHITE}-${Green}${chipsets_number}${WHITE}] (${BOLD_YELLOW}q${WHITE}=quit): ${GREEN}"
 
-            read interface_selection
-            if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
-                if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
-                    is_interface_selected=true
-                    wlan=${interfaces[$((interface_selection-1))]}
-                fi
-            fi
-        done
+             read interface_selection
+             case "${interface_selection}" in
+                 q|Q)
+                     quit_now
+                     ;;
+             esac
+             if [[ "${interface_selection}" =~ ^[+-]?[0-9]+$ ]]; then
+                 if [ "${interface_selection}" -ge 1 ] && [ "${interface_selection}" -le "${chipsets_number}" ]; then
+                     is_interface_selected=true
+                     wlan=${interfaces[$((interface_selection-1))]}
+                 fi
+             fi
+         done
 
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Enabling monitor mode on ${BOLD_PURPLE}${wlan}${WHITE}."
         ip link set dev "${wlan}" down 2>/dev/null
@@ -980,7 +1015,8 @@ main() {
         mkdir -p "${TMP_DIR}"
         ln -sfn "${TMP_DIR}" "${SCRIPT_DIR}/tmp/latest"
     fi
-    trap cleanup EXIT INT TERM
+    trap cleanup EXIT
+    trap 'exit 130' INT TERM
     local result='main'
     while [ "${result}" == 'main' ];
     do
@@ -1011,15 +1047,20 @@ main() {
             echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
             echo -e "${WHITE}     | ${YELLOW} ID ${WHITE} |                            ${BOLD_PURPLE}Name${WHITE}                           |"
             echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
-            echo -e "${WHITE}     | ${RED}[${YELLOW}01${RED}]${WHITE} |${GREEN} Start the attack${WHITE}.                                         |"
-            echo -e "${WHITE}     | ${RED}[${YELLOW}02${RED}]${WHITE} |${GREEN} Exit${WHITE}.                                                     |"
-            echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
-            echo ""
-            echo -e -n "${WHITE}    ${RED} [${CYAN}!${RED}]${WHITE} Type the${BOLD_RED} ID${WHITE} of your choice: "
+             echo -e "${WHITE}     | ${RED}[${YELLOW}01${RED}]${WHITE} |${GREEN} Start the attack${WHITE}.                                         |"
+             echo -e "${WHITE}     | ${RED}[${YELLOW}02${RED}]${WHITE} |${GREEN} Exit${WHITE}.                                                     |"
+             echo -e "${YELLOW}     +${WHITE}------------------------------------------------------------------${YELLOW}+"
+             echo ""
+             echo -e -n "${WHITE}    ${RED} [${CYAN}!${RED}]${WHITE} Type the${BOLD_RED} ID${WHITE} of your choice${WHITE} (${BOLD_YELLOW}q${WHITE}=quit): "
 
-            local menu_selection
-            read menu_selection
-            menu_selection=$((menu_selection + 0))
+             local menu_selection
+             read menu_selection
+             case "${menu_selection}" in
+                 q|Q)
+                     quit_now
+                     ;;
+             esac
+             menu_selection=$((menu_selection + 0))
 
             case "${menu_selection}" in
                 "1")
@@ -1123,7 +1164,7 @@ HCONF
                     fi
                     echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Check: ${BOLD_CYAN}${TMP_DIR}/{hostapd,dhcpd,aireplay-ng}.log${GREEN}, passwords: ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                     echo ""
-                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[v]${GREEN}ictims ${WHITE}| ${BOLD_YELLOW}[t]${GREEN}raffic capture ${WHITE}| ${BOLD_YELLOW}[s]${GREEN}tatus ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
+                    echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Commands: ${BOLD_YELLOW}[d]${GREEN}eauth ${WHITE}| ${BOLD_YELLOW}[c]${GREEN}aptive portal ${WHITE}| ${BOLD_YELLOW}[v]${GREEN}ictims ${WHITE}| ${BOLD_YELLOW}[t]${GREEN}raffic capture ${WHITE}| ${BOLD_YELLOW}[s]${GREEN}tatus ${WHITE}| ${BOLD_YELLOW}[b]${GREEN}ack ${WHITE}| ${BOLD_YELLOW}[q]${GREEN}uit${WHITE}"
                     deauth_running=false
                     portal_running=false
                     while true; do
@@ -1220,8 +1261,12 @@ HCONF
                                 fi
                                 echo ""
                                 ;;
-                            q|Q)
+                            b|B)
+                                echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Attack keeps running in the background. Back to menu.${WHITE}"
                                 break
+                                ;;
+                            q|Q)
+                                quit_now
                                 ;;
                         esac
                     done
