@@ -1079,8 +1079,8 @@ HCONF
                     echo "1" > /proc/sys/net/ipv4/ip_forward
 
                     if [ -n "${lan}" ]; then
-                        iptables -A FORWARD -i "${wlan}" -o "${lan}" -j ACCEPT
-                        iptables -A FORWARD -i "${lan}" -o "${wlan}" -m state --state ESTABLISHED,RELATED -j ACCEPT
+                        iptables -I FORWARD 1 -i "${lan}" -o "${wlan}" -m state --state ESTABLISHED,RELATED -j ACCEPT
+                        iptables -I FORWARD 1 -i "${wlan}" -o "${lan}" -j ACCEPT
                         iptables -t nat -A POSTROUTING -o "${lan}" -j MASQUERADE
                     else
                         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} No internet interface selected. Victims will have no internet access.${WHITE}"
